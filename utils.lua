@@ -1,15 +1,15 @@
-local band = bit.band
-local bor = bit.bor
-local bxor = bit.bxor
-local bnot = bit.bnot
-local lshift = bit.lshift
-local rshift = bit.rshift
+local band = bit32.band
+local bor = bit32.bor
+local bxor = bit32.bxor
+local bnot = bit32.bnot
+local lshift = bit32.lshift
+local rshift = bit32.rshift
 
-UTILS = {}
-local UTILS = UTILS
+local UTILS = {}
+UTILS.UNDEFINED = {}
 
 function UTILS.isDefined(v)
-    return (v and v ~= CPU.UNDEFINED) and v or nil
+    return (v and v ~= UTILS.UNDEFINED) and v or nil
 end
 
 function UTILS.bind(f, param)
@@ -325,3 +325,5 @@ function UTILS.class(parent)
     end
     return class
 end
+
+return UTILS

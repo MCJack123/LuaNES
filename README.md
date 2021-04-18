@@ -1,5 +1,5 @@
 # LuaNES
-NES emulator in lua+love2d based/inspired on [optcarrot](https://github.com/mame/optcarrot). Note that the emulator is written in pure lua(JIT) and it should be possible to write a "front end" for it in something other than love2d (Like games that embed lua and let you play audio/video from memory).
+NES emulator in CraftOS-PC based/inspired on [optcarrot](https://github.com/mame/optcarrot). Note that the emulator is written in pure lua(JIT).
 
 Here's what it looks like: https://streamable.com/x7f5u
 
@@ -7,7 +7,7 @@ LuaNES running inside Garry's Mod: https://share.epic-domain.com/2019-06-29_18-2
 
 # Running
 
-Get https://love2d.org/ and run `love . path/to/rom.nes` in the repo folder.
+`cd` to the cloned repo, and run `main <path to rom>` in the CraftOS shell.
 
 # Overview
 

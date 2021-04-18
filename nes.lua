@@ -1,21 +1,19 @@
-require "libs/serpent"
-require "utils"
-require "cpu"
-require "ppu"
-require "apu"
-require "rom"
-require "palette"
-require "pads"
+local UTILS = require "utils"
+local CPU = require "cpu"
+local PPU = require "ppu"
+local APU = require "apu"
+local ROM = require "rom"
+local PALETTE = require "palette"
+local Pads = require "pads"
 
-local band, bor, bxor, bnot, lshift, rshift = bit.band, bit.bor, bit.bxor, bit.bnot, bit.lshift, bit.rshift
+local band, bor, bxor, bnot, lshift, rshift = bit32.band, bit32.bor, bit32.bxor, bit32.bnot, bit32.lshift, bit32.rshift
 local map, rotatePositiveIdx, nthBitIsSet, nthBitIsSetInt =
     UTILS.map,
     UTILS.rotatePositiveIdx,
     UTILS.nthBitIsSet,
     UTILS.nthBitIsSetInt
 
-NES = {}
-local NES = NES
+local NES = {}
 NES._mt = {__index = NES}
 
 function NES:reset()
@@ -59,7 +57,7 @@ function NES:run(counter)
 end
 function NES:new(opts)
     opts = opts or {}
-    local conf = {romfile = opts.file, pc = opts.pc or nil, loglevel = opts.loglevel or 0}
+    local conf = {romfile = opts.file, pc = opts.pc or nil, loglevel = opts.loglevel or 0, debug = opts.debug}
     local nes = {}
     local palette = opts.palette or PALETTE:defacto_palette()
     setmetatable(nes, NES._mt)
@@ -101,3 +99,5 @@ function NES:new(opts)
     nes.frame_target = nil
     return nes
 end
+
+return NES

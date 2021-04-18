@@ -1,15 +1,16 @@
-local band, bor, bxor, bnot, lshift, rshift = bit.band, bit.bor, bit.bxor, bit.bnot, bit.lshift, bit.rshift
+local UTILS = require "utils"
+
+local band, bor, bxor, bnot, lshift, rshift = bit32.band, bit32.bor, bit32.bxor, bit32.bnot, bit32.lshift, bit32.rshift
 local map, rotatePositiveIdx, nthBitIsSet, nthBitIsSetInt =
     UTILS.map,
     UTILS.rotatePositiveIdx,
     UTILS.nthBitIsSet,
     UTILS.nthBitIsSetInt
 
-CPU = {
+local CPU = {
     RP2A03_CC = 12,
     FOREVER_CLOCK = 0xffffffff
 }
-local CPU = CPU
 local DISPATCH
 CPU._mt = {__index = CPU}
 
@@ -20,7 +21,6 @@ do
         CPU.CLK[i] = clocks[i] * CPU.RP2A03_CC
     end
 end
-CPU.UNDEFINED = {}
 CPU.RAM_SIZE = 0x0800
 CPU.MAINMEM_SIZE = 0x10000
 CPU.NMI_VECTOR = 0xfffa
@@ -38,12 +38,11 @@ CPU.ClockRates = {
 }
 local RAM_SIZE, UNDEFINED, NMI_VECTOR, IRQ_VECTOR, FOREVER_CLOCK =
     CPU.RAM_SIZE,
-    CPU.UNDEFINED,
+    UTILS.UNDEFINED,
     CPU.NMI_VECTOR,
     CPU.IRQ_VECTOR,
     CPU.FOREVER_CLOCK
 
-local UNDEFINED = CPU.UNDEFINED
 local CLK = CPU.CLK
 
 local isDefined = UTILS.isDefined
@@ -53,7 +52,6 @@ local tGetter = UTILS.tGetter
 local fill = UTILS.fill
 local range = UTILS.range
 local printf = UTILS.printf
-local nthBitIsSetInt = UTILS.nthBitIsSetInt
 
 CPU.PokeNop = function()
 end
@@ -69,15 +67,6 @@ end
 function CPU:update()
     self.apu:clock_dma(self.clk)
     return self.clk
-end
-
-function CPU:dmc_dma(addr)
-    -- This is inaccurate; it must steal *up to* 4 clocks depending upon
-    -- whether CPU writes in this clock, but this always steals 4 clocks.
-    self.clk = self.clk + CLK[3]
-    local dma_buffer = self:fetch(addr)
-    self.clk = self.clk + CLK[1]
-    return dma_buffer
 end
 
 function CPU:next_frame_clock()
@@ -106,7 +95,7 @@ function CPU:peek_jam_2(_addr)
 end
 
 function CPU:peek_ram(addr)
-    return self.ram[addr % CPRAM_SIZE]
+    return self.ram[addr % RAM_SIZE]
 end
 function CPU:poke_ram(addr, data)
     self.ram[addr % RAM_SIZE] = data
@@ -1118,14 +1107,14 @@ end
 local asd = 0
 function CPU:run_once()
     self.opcode = self:fetch(self._pc)
-    --[[
+    
     if self.conf.loglevel >= 3 then
         self:printState(true)
             self.conf.debug(string.format("PC:%04X A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%3d : OPCODE:%02X (%d, %d)" ,
-              self._pc, self._a, self._x, self._y, self:flags_pack(), self._sp, self.clk / 4 % 341, self.opcode, self.cl
+              self._pc, self._a, self._x, self._y, self:flags_pack(), self._sp, self.clk / 4 % 341, self.opcode, self.clk, self.clk_frame
             ))
     end
-    --]]
+    
     self._pc = self._pc + 1
 
     --[[

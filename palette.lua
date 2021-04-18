@@ -1,14 +1,14 @@
 local complex = require "libs/complex"
+local UTILS = require "utils"
 
-local band, bor, bxor, bnot, lshift, rshift = bit.band, bit.bor, bit.bxor, bit.bnot, bit.lshift, bit.rshift
+local band, bor, bxor, bnot, lshift, rshift = bit32.band, bit32.bor, bit32.bxor, bit32.bnot, bit32.lshift, bit32.rshift
 local map, rotatePositiveIdx, nthBitIsSet, nthBitIsSetInt =
     UTILS.map,
     UTILS.rotatePositiveIdx,
     UTILS.nthBitIsSet,
     UTILS.nthBitIsSetInt
 
-PALETTE = {}
-local PALETTE = PALETTE
+local PALETTE = {}
 
 function PALETTE:defacto_palette()
     local p =
@@ -110,7 +110,7 @@ end
 -- Nestopia generates a palette systematically (cool!), but it is not compatible with nes-tests-rom
 function PALETTE:nestopia_palette()
     return UTILS.map(
-        range(0, 511),
+        UTILS.range(0, 511),
         function(n)
             local tint, level, color = band(rshift(n, 6), 7), band(rshift(n, 4), 3), band(n, 0x0f)
             local t = ({{-0.12, 0.40}, {0.00, 0.68}, {0.31, 1.00}, {0.72, 1.00}})[level + 1]
@@ -155,3 +155,5 @@ function PALETTE:nestopia_palette()
     )
 end
 --]]
+
+return PALETTE

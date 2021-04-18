@@ -1,4 +1,7 @@
-local band, bor, bxor, bnot, lshift, rshift = bit.band, bit.bor, bit.bxor, bit.bnot, bit.lshift, bit.rshift
+local UTILS = require "utils"
+local CPU = require "cpu"
+
+local band, bor, bxor, bnot, lshift, rshift = bit32.band, bit32.bor, bit32.bxor, bit32.bnot, bit32.lshift, bit32.rshift
 local map, rotatePositiveIdx, nthBitIsSet, nthBitIsSetInt, range =
     UTILS.map,
     UTILS.rotatePositiveIdx,
@@ -6,8 +9,7 @@ local map, rotatePositiveIdx, nthBitIsSet, nthBitIsSetInt, range =
     UTILS.nthBitIsSetInt,
     UTILS.range
 
-PPU = {}
-local PPU = PPU
+local PPU = {}
 PPU._mt = {__index = PPU}
 function PPU:new(conf, cpu, palette)
     local ppu = {}
@@ -437,7 +439,7 @@ end
 function PPU:monitor_a12_rising_edge(monitor)
     self.a12_monitor = monitor
     self.update_address_line = self.do_update_address_line
-    self.update_scroll_address_line = update_scroll_address_line_monitor_a12
+    self.update_scroll_address_line = self.update_scroll_address_line_monitor_a12
 end
 
 --------------------------------------------------------------------------------------------------------------------
@@ -854,7 +856,7 @@ function PPU:open_attr()
     if not self.any_show then
         return
     end
-    local t = self.attr_lut[bit.bor(self.scroll_addr_0_4, self.scroll_addr_5_14)]
+    local t = self.attr_lut[bit32.bor(self.scroll_addr_0_4, self.scroll_addr_5_14)]
     self.io_addr, self.bg_pattern_lut_fetched = t[1], t[2]
     return self:update_address_line()
 end
@@ -1215,7 +1217,7 @@ function PPU:run()
         self.fiber = coroutine.wrap(UTILS.bind(self.main_loop, self), 0)
     end
 
-    --if self.conf.loglevel >= 3 then self:debug_logging(self.scanline, self.hclk, self.hclk_target) end
+    if self.conf.loglevel >= 3 then self:debug_logging(self.scanline, self.hclk, self.hclk_target) end
 
     self:make_sure_invariants()
 
@@ -1620,3 +1622,5 @@ function PPU:main_loop()
         self:post_render()
     end
 end
+
+return PPU

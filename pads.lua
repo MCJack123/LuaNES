@@ -1,12 +1,14 @@
-local band, bor, bxor, bnot, lshift, rshift = bit.band, bit.bor, bit.bxor, bit.bnot, bit.lshift, bit.rshift
+local UTILS = require "utils"
+
+local band, bor, bxor, bnot, lshift, rshift = bit32.band, bit32.bor, bit32.bxor, bit32.bnot, bit32.lshift, bit32.rshift
 local map, rotatePositiveIdx, nthBitIsSet, nthBitIsSetInt =
   UTILS.map,
   UTILS.rotatePositiveIdx,
   UTILS.nthBitIsSet,
   UTILS.nthBitIsSetInt
 
-Pads = {}
-local Pads = Pads
+local Pads = {}
+local Pad
 Pads._mt = {__index = Pads}
 function Pads:new(conf, cpu, apu)
   local pads = {}
@@ -100,3 +102,6 @@ function Pad:poll_state()
 
   return state
 end
+
+Pads.Pad = Pad
+return Pads

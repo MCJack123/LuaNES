@@ -1,6 +1,9 @@
 local serpent = require("libs/serpent")
+local UTILS = require "utils"
+local CPU = require "cpu"
+local PPU = require "ppu"
 
-local band, bor, bxor, bnot, lshift, rshift = bit.band, bit.bor, bit.bxor, bit.bnot, bit.lshift, bit.rshift
+local band, bor, bxor, bnot, lshift, rshift = bit32.band, bit32.bor, bit32.bxor, bit32.bnot, bit32.lshift, bit32.rshift
 local map, rotatePositiveIdx, nthBitIsSet, nthBitIsSetInt, range, bind =
     UTILS.map,
     UTILS.rotatePositiveIdx,
@@ -9,8 +12,7 @@ local map, rotatePositiveIdx, nthBitIsSet, nthBitIsSetInt, range, bind =
     UTILS.range,
     UTILS.bind
 
-ROM = {}
-local ROM = ROM
+local ROM = {}
 ROM._mt = {__index = ROM}
 
 --[[
@@ -95,7 +97,7 @@ function ROM:init()
 end
 
 function ROM:reset()
-    self.cpu:add_mappings(range(0x8000, 0xffff), UTILS.tGetter(self.prg_ref), CPU.UNDEFINED)
+    self.cpu:add_mappings(range(0x8000, 0xffff), UTILS.tGetter(self.prg_ref), UTILS.UNDEFINED)
 end
 
 function ROM:peek_6000(addr)
@@ -115,9 +117,10 @@ function ROM:load_battery()
     if not self.battery then
         return
     end
-    local sav = self.basename + ".sav"
-    self.wrk.replace(sav.bytes)
-    local inp = assert(io.open(sav, "rb"))
+    local sav = self.basename .. ".sav"
+    --self.wrk.replace(sav.bytes)
+    local inp = io.open(sav, "rb")
+    if not inp then return end
     self.wrk = serpent.load(inp:read("*all"))
     assert(inp:close())
 end
@@ -126,7 +129,7 @@ function ROM:save_battery()
     if not self.battery then
         return
     end
-    local sav = self.basename + ".sav"
+    local sav = self.basename .. ".sav"
     print("Saving: " .. sav)
     local out = assert(io.open(sav, "wb"))
     out:write(serpent.dump(self.wrk))
@@ -142,7 +145,7 @@ end
 
 function ROM.load(conf, cpu, ppu)
     local filename = conf.romfile
-    local path, basename, extension = string.match(filename, "(.-)([^\\]-([^\\%.]+))$")
+    local path, basename, extension = string.match(filename, "(.-)([^\\/]-([^\\/%.]+))$")
 
     local inp = assert(io.open(filename, "rb"))
     local str = inp:read("*all")
@@ -168,7 +171,7 @@ function ROM:parse_header(buf, str)
         check = str:sub(1, 4),
         trainer = nthBitIsSet(buf[7], 2),
         VS = nthBitIsSet(buf[8], 0),
-        PAl = nthBitIsSet(buf[10], 0),
+        PAL = nthBitIsSet(buf[10], 0),
         prg_pages = buf[5],
         chr_pages = buf[6],
         battery = nthBitIsSet(buf[7], 1),
@@ -233,7 +236,7 @@ function CNROM:reset()
     self.cpu:add_mappings(
         range(0x8000, 0xffff),
         UTILS.tGetter(self.prg_ref),
-        self.chr_ram and bind(self.poke_8000, self) or CPU.UNDEFINED
+        self.chr_ram and bind(self.poke_8000, self) or UTILS.UNDEFINED
     )
 end
 
@@ -428,7 +431,7 @@ function MMC3:reset()
     self.wrk_readable = true
     self.wrk_writable = false
 
-    local poke_a000 = self.mirroring ~= "FourScreen" and bind(self.poke_a000, self) or CPU.UNDEFINED
+    local poke_a000 = self.mirroring ~= "FourScreen" and bind(self.poke_a000, self) or UTILS.UNDEFINED
     self.cpu:add_mappings(range(0x6000, 0x7fff), bind(self.peek_6000, self), bind(self.poke_6000, self))
     local g = UTILS.tGetter(self.prg_ref)
     self.cpu:add_mappings(range(0x8000, 0x9fff, 2), g, bind(self.poke_8000, self))
@@ -589,3 +592,5 @@ function MMC3:a12_signaled(cycle)
 end
 
 ROM.MAPPER_DB[0x04] = MMC3
+
+return ROM

@@ -5,36 +5,43 @@ if pcall(require, "jit.opt") then
         --
     )
 end
-require "nes"
-Nes = nil
+package.loaded.apu = nil
+package.loaded.cpu = nil
+package.loaded.nes = nil
+package.loaded.pads = nil
+package.loaded.palette = nil
+package.loaded.ppu = nil
+package.loaded.rom = nil
+package.loaded.utils = nil
+local NES = require "nes"
+local UTILS = require "utils"
+local PALETTE = require "palette"
+local Pad = require "pads".Pad
+local PPU = require "ppu"
+local APU = require "apu"
+
+local Nes = nil
 local width = 256
 local height = 240
 local pixSize = 1
 local lastSource
-local sound = false
+--local sound = false
 local DEBUG = false
-function love.load(arg)
+local function _load(arg)
     --[[
     love.profiler = require("libs/profile")
     love.profiler.hookall("Lua")
     love.profiler.start()
     --]]
-    local file = arg[1] or " "
-    local loglvl = loadstring("return " .. (arg[2] or "0"))
-    loglvl = loglvl and loglvl()
-    DEBUG = not (not (loadstring("return " .. (arg[3] or "false"))))
-    local pc = loadstring("return " .. (arg[4] or ""))
-    pc = pc and pc()
-    imageData = love.image.newImageData(width * pixSize + 1, height * pixSize + 1)
-    image = love.graphics.newImage(imageData)
-    love.window.setTitle("LuaNEs")
+    local file = shell.resolve(arg[1] or " ")
     --Nes = NES:new({file="tests/hello.nes", loglevel=5})
     Nes =
         NES:new(
         {
             file = file,
-            loglevel = loglvl,
-            pc = pc,
+            loglevel = 0,
+            debug = print,
+            pc = nil,
             palette = UTILS.map(
                 PALETTE:defacto_palette(),
                 function(c)
@@ -45,12 +52,12 @@ function love.load(arg)
     )
     --Nes:run()
     Nes:reset()
-    love.window.setMode(width, height, {resizable = true, minwidth = width, minheight = height, vsync = false})
+    --love.window.setMode(width, height, {resizable = true, minwidth = width, minheight = height, vsync = false})
     local samplerate = 44100
     local bits = 16
     local channels = 1
-    sound = love.sound.newSoundData(samplerate / 60 + 1, samplerate, bits, channels)
-    QS = love.audio.newQueueableSource(samplerate, bits, channels)
+    --sound = love.sound.newSoundData(samplerate / 60 + 1, samplerate, bits, channels)
+    --QS = love.audio.newQueueableSource(samplerate, bits, channels)
 end
 local keyEvents = {}
 local keyButtons = {
@@ -58,12 +65,12 @@ local keyButtons = {
     ["a"] = Pad.LEFT,
     ["s"] = Pad.DOWN,
     ["d"] = Pad.RIGHT,
-    ["o"] = Pad.A,
-    ["p"] = Pad.B,
-    ["i"] = Pad.SELECT,
-    ["return"] = Pad.START
+    ["p"] = Pad.A,
+    ["o"] = Pad.B,
+    ["g"] = Pad.SELECT,
+    ["enter"] = Pad.START
 }
-function love.keypressed(key)
+local function keypressed(key)
     for k, v in pairs(keyButtons) do
         if k == key then
             keyEvents[#keyEvents + 1] = {"keydown", v}
@@ -71,7 +78,7 @@ function love.keypressed(key)
     end
 end
 
-function love.keyreleased(key)
+local function keyreleased(key)
     for k, v in pairs(keyButtons) do
         if k == key then
             keyEvents[#keyEvents + 1] = {"keyup", v}
@@ -79,10 +86,9 @@ function love.keyreleased(key)
     end
 end
 
-love.frame = 0
 local time = 0
 local timeTwo = 0
-local rate = 1 / 59.94
+local rate = 1 / 59.97
 local fps = 0
 local tickRate = 0
 local tickRatetmp = 0
@@ -95,13 +101,14 @@ local function update()
     end
     keyEvents = {}
     Nes:run_once()
-    local samples = Nes.cpu.apu.output
+    --[[local samples = Nes.cpu.apu.output
     for i = 1, #samples do
         sound:setSample(i, samples[i])
     end
     QS:queue(sound)
-    QS:play()
+    QS:play()]]
 end
+--[[
 local function drawScreen()
     local sx = love.graphics.getWidth() / image:getWidth()
     local sy = love.graphics.getHeight() / image:getHeight()
@@ -164,10 +171,115 @@ local function draw()
         drawAPUState()
     end
 end
-function love.draw()
+]]
+local fpsCharacters = {
+    ["0"] = {
+        "\255\255\255\254",
+        "\255\254\255\254",
+        "\255\254\255\254",
+        "\255\254\255\254",
+        "\255\255\255\254"
+    },
+    ["1"] = {
+        "\254\255\254\254\254",
+        "\254\255\254\254\254",
+        "\254\255\254\254\254",
+        "\254\255\254\254\254",
+        "\254\255\254\254\254",
+    },
+    ["2"] = {
+        "\255\255\255\254",
+        "\254\254\255\254",
+        "\255\255\255\254",
+        "\255\254\254\254",
+        "\255\255\255\254",
+    },
+    ["3"] = {
+        "\255\255\255\254",
+        "\254\254\255\254",
+        "\255\255\255\254",
+        "\254\254\255\254",
+        "\255\255\255\254",
+    },
+    ["4"] = {
+        "\255\254\255\254",
+        "\255\254\255\254",
+        "\255\255\255\254",
+        "\254\254\255\254",
+        "\254\254\255\254",
+    },
+    ["5"] = {
+        "\255\255\255\254",
+        "\255\254\254\254",
+        "\255\255\255\254",
+        "\254\254\255\254",
+        "\255\255\255\254",
+    },
+    ["6"] = {
+        "\255\255\255\254",
+        "\255\254\254\254",
+        "\255\255\255\254",
+        "\255\254\255\254",
+        "\255\255\255\254",
+    },
+    ["7"] = {
+        "\255\255\255\254",
+        "\254\254\255\254",
+        "\254\254\255\254",
+        "\254\254\255\254",
+        "\254\254\255\254",
+    },
+    ["8"] = {
+        "\255\255\255\254",
+        "\255\254\255\254",
+        "\255\255\255\254",
+        "\255\254\255\254",
+        "\255\255\255\254",
+    },
+    ["9"] = {
+        "\255\255\255\254",
+        "\255\254\255\254",
+        "\255\255\255\254",
+        "\254\254\255\254",
+        "\255\255\255\254",
+    },
+    [" "] = {
+        "\254\254\254\254",
+        "\254\254\254\254",
+        "\254\254\254\254",
+        "\254\254\254\254",
+        "\254\254\254\254",
+    },
+    ["F"] = {
+        "\255\255\255\254",
+        "\255\254\254\254",
+        "\255\255\255\254",
+        "\255\254\254\254",
+        "\255\254\254\254",
+    },
+    ["P"] = {
+        "\255\255\255\254",
+        "\255\254\255\254",
+        "\255\255\255\254",
+        "\255\254\254\254",
+        "\255\254\254\254",
+    },
+    ["S"] = {
+        "\254\255\255\254",
+        "\255\254\254\254",
+        "\254\255\254\254",
+        "\254\254\255\254",
+        "\255\255\254\254",
+    },
+}
+
+local last_render = os.epoch "utc"
+local last_render_ = last_render
+local lastFrameUpdate, frameCount = 0, 0
+local function draw()
     --[
-    time = time + love.timer.getDelta()
-    timeTwo = timeTwo + love.timer.getDelta()
+    time = time + ((os.epoch "utc" - last_render_) / 1000)
+    timeTwo = timeTwo + ((os.epoch "utc" - last_render_) / 1000)
     while time > rate do
         time = time - rate
         update()
@@ -177,7 +289,7 @@ function love.draw()
         tickRate = tickRatetmp
         tickRatetmp = 0
     end
-    fps = 1 / love.timer.getDelta()
+    fps = 1 / ((os.epoch "utc" - last_render_) / 1000)
     --]]
     --[[
     timeTwo = timeTwo + love.timer.getDelta()
@@ -190,6 +302,8 @@ function love.draw()
     --]]
     --[
     local pxs = Nes.cpu.ppu.output_pixels
+    local palette = {}
+    local pixels = {}
     for i = 1, pixelCount do
         local x = (i - 1) % width
         local y = math.floor((i - 1) / width) % height
@@ -212,10 +326,71 @@ function love.draw()
         end
         --]]
         --[
-        imageData:setPixel(x + 1, y + 1, px[1], px[2], px[3], 1)
+        local j = 1
+        while j <= #palette do if palette[j][1] == px[1] and palette[j][2] == px[2] and palette[j][3] == px[3] then break end j=j+1 end
+        if not palette[j] then
+            if j >= 256 then error("Too many colors on screen") end
+            palette[j] = px
+        end
+        --term.setPixel(x + 1, y + 1, j)
+        if not pixels[y+1] then pixels[y+1] = "" end
+        pixels[y+1] = pixels[y+1] .. string.char(j-1)
         --]]
     end
-    image:replacePixels(imageData)
+    for j = 1, #palette do term.setPaletteColor(j-1, palette[j][1], palette[j][2], palette[j][3]) end
+    term.drawPixels(0, 0, pixels)
+    if math.floor(os.epoch("utc") / 1000) > lastFrameUpdate then
+        lastFrameUpdate = math.floor(os.epoch("utc") / 1000)
+        local str = tostring(frameCount) .. " FPS"
+        term.setPaletteColor(254, 0, 0, 0)
+        term.setPaletteColor(255, 1, 1, 1)
+        for i = 1, #str do term.drawPixels(256 + i*4, 0, fpsCharacters[str:sub(i, i)]) end
+        frameCount = 0
+    end
+    frameCount=frameCount+1
+    --image:replacePixels(imageData)
 
-    draw()
+    --draw()
 end
+
+term.setGraphicsMode(2)
+term.clear()
+if sound then
+    for i = 1, 5 do sound.setVolume(i, 0) end
+    sound.setWaveType(1, "square")
+    sound.setWaveType(2, "square")
+    sound.setWaveType(3, "triangle")
+    sound.setWaveType(4, "noise")
+    sound.setFrequency(4, 1)
+end
+
+_load({...})
+os.queueEvent("update")
+local ok, err = pcall(parallel.waitForAny, function()
+    while true do
+        local ev = {os.pullEvent()}
+        if ev[1] == "char" and ev[2] == "q" then break
+        elseif ev[1] == "key" and not ev[3] then keypressed(keys.getName(ev[2]))
+        elseif ev[1] == "key_up" then keyreleased(keys.getName(ev[2]))
+        end
+    end
+end, function()
+    while true do
+        os.pullEvent("update")
+        if os.epoch("utc") - last_render >= 16 then
+            last_render = os.epoch("utc")
+            draw()
+            last_render_ = last_render
+        end
+        os.queueEvent("update")
+    end
+end)
+if not ok then printError(err) end
+
+term.setGraphicsMode(0)
+for i = 0, 15 do term.setPaletteColor(2^i, term.nativePaletteColor(2^i)) end
+if sound then for i = 1, 5 do sound.setVolume(i, 0) sound.setFrequency(i, 0) end end
+--term.setBackgroundColor(colors.black)
+--term.setTextColor(colors.white)
+--term.clear()
+--term.setCursorPos(1, 1)

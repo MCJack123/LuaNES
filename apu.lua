@@ -1,6 +1,9 @@
+local UTILS = require "utils"
+local CPU = require "cpu"
+
 -- Refer to https://wiki.nesdev.com/w/index.php/APU
 -- for documentation on how the APU works
-local band, bor, bxor, bnot, lshift, rshift = bit.band, bit.bor, bit.bxor, bit.bnot, bit.lshift, bit.rshift
+local band, bor, bxor, bnot, lshift, rshift = bit32.band, bit32.bor, bit32.bxor, bit32.bnot, bit32.lshift, bit32.rshift
 local map, rotatePositiveIdx, nthBitIsSet, nthBitIsSetInt, range, concat0, concat =
   UTILS.map,
   UTILS.rotatePositiveIdx,
@@ -10,17 +13,10 @@ local map, rotatePositiveIdx, nthBitIsSet, nthBitIsSetInt, range, concat0, conca
   UTILS.concat0,
   UTILS.concat
 
-APU = {}
-local APU = APU
+local APU = {}
+local Noise, DMC, MIXER, Pulse, Triangle
 APU._mt = {__index = APU}
 
-local NES =
-  Nes or
-  {
-    -- DUMMY NES
-    RP2A03_CC = 12,
-    FOREVER_CLOCK = 0xffffffff
-  }
 APU.CLK_M2_MUL = 6
 APU.CLK_NTSC = 39375000 * APU.CLK_M2_MUL
 APU.CLK_NTSC_DIV = 11
@@ -62,9 +58,9 @@ function APU:initialize(conf, cpu, rate, bits)
   rate = rate or 44100
   bits = bits or 8
 
-  self.pulse_0, self.pulse_1 = Pulse:new(self), Pulse:new(self)
-  self.triangle = Triangle:new(self)
-  self.noise = Noise:new(self)
+  self.pulse_0, self.pulse_1 = Pulse:new(self, 1), Pulse:new(self, 2)
+  self.triangle = Triangle:new(self, 3)
+  self.noise = Noise:new(self, 4)
   self.dmc = DMC:new(self.cpu, self)
   self.mixer = MIXER:new(self.pulse_0, self.pulse_1, self.triangle, self.noise, self.dmc)
 
@@ -338,7 +334,7 @@ function APU:poke_4017(_addr, data)
   end
   self:update(n)
   if self.frame_irq_clock <= n then
-    clock_frame_irq(n)
+    self:clock_frame_irq(n)
   end
   n = n + CPU.CLK[1]
   self.oscillator_clocks = APU.OSCILLATOR_CLOCKS[nthBitIsSetInt(data, 7) + 1]
@@ -446,7 +442,7 @@ function Envelope:clock()
       self.count = self.count - 1
       return
     end
-    if self.volume ~= 0 or self.looping then
+    if self.volume ~= 0 --[[or self.looping]] then
       self.volume = band((self.volume - 1), 0x0f)
     end
   end
@@ -466,7 +462,6 @@ function Envelope:update_output()
 end
 
 MIXER = UTILS.class()
-local MIXER = MIXER
 MIXER.VOL = 192
 MIXER.P_F = 900
 MIXER.P_0 = 9552 * APU.CHANNEL_OUTPUT_MUL * MIXER.VOL * (MIXER.P_F / 100)
@@ -525,13 +520,14 @@ end
 
 local Oscillator = UTILS.class()
 
-function Oscillator:initialize(apu)
+function Oscillator:initialize(apu, channel)
   self.apu = apu
   self.rate = 1
   self.fixed = 1
   self.envelope = nil
   self.length_counter = nil
   self.wave_length = nil
+  self.channel = channel
 end
 
 function Oscillator:reset()
@@ -595,6 +591,10 @@ end
 function Oscillator:enable(enabled)
   self.length_counter:enable(enabled)
   self.is_active = self:active()
+  if sound then
+    if self.is_active then sound.setVolume(self.channel, (self.envelope and self.envelope.volume or 0xf) / 160)
+    else sound.setVolume(self.channel, 0) end
+  end
 end
 
 function Oscillator:update_settings(r, f)
@@ -610,9 +610,12 @@ end
 function Oscillator:clock_envelope()
   self.envelope:clock()
   self.is_active = self:active()
+  if sound then
+    if self.is_active then sound.setVolume(self.channel, self.envelope.volume / 160)
+    else sound.setVolume(self.channel, 0) end
+  end
 end
 Pulse = UTILS.class(Oscillator)
-local Pulse = Pulse
 Pulse.MIN_FREQ = 0x0008
 Pulse.MAX_FREQ = 0x07ff
 --Pulse.WAVE_FORM = map{0b11111101, 0b11111001, 0b11100001, 0b00000110},function(n) return UTILS.map(range(0,7), function(i) return n[i] * 0x1f } end))
@@ -622,9 +625,10 @@ Pulse.WAVE_FORM = {
   {[0] = 0, 0, 0, 0, 1, 1, 1, 1},
   {[0] = 1, 1, 1, 1, 1, 1, 0, 0}
 }
+Pulse.WAVE_FORM_DUTY = {1 / 8, 1 / 4, 1 / 2, 3 / 4}
 
-function Pulse:initialize(_apu)
-  self._parent.initialize(self, _apu)
+function Pulse:initialize(_apu, channel)
+  self._parent.initialize(self, _apu, channel)
   self.wave_length = 0
   self.envelope = Envelope:new()
   self.length_counter = LengthCounter:new()
@@ -661,12 +665,14 @@ function Pulse:update_freq()
     self.valid_freq = false
   end
   self.is_active = self:active()
+  if sound then sound.setFrequency(self.channel, math.min(APU.CLK_NTSC / self.freq / 2^(1.125/6), 20000)) end
 end
 
 function Pulse:poke_0(_addr, data)
   self._parent.poke_0(self, _addr, data)
   self.duty = band(rshift(data, 6), 3)
   self.form = Pulse.WAVE_FORM[1 + self.duty]
+  if sound and sound.version then sound.setWaveType(self.channel, "square", Pulse.WAVE_FORM_DUTY[1 + self.duty]) end
 end
 
 function Pulse:poke_1(_addr, data)
@@ -764,12 +770,11 @@ function Pulse:sample()
 end
 
 Triangle = UTILS.class(Oscillator)
-local Triangle = Triangle
 Triangle.MIN_FREQ = 2 + 1
 Triangle.WAVE_FORM = concat0(range(0, 15), range(15, 0))
 
-function Triangle:initialize(_apu)
-  self._parent.initialize(self, _apu)
+function Triangle:initialize(_apu, channel)
+  self._parent.initialize(self, _apu, channel)
   self.wave_length = 0
   self.length_counter = LengthCounter:new()
 end
@@ -790,6 +795,7 @@ end
 function Triangle:update_freq()
   self.freq = (self.wave_length + 1) * self.fixed
   self.is_active = self:active()
+  if sound then sound.setFrequency(self.channel, math.min(APU.CLK_NTSC / self.freq / 2^(1.125/6+2), 20000)) end
 end
 
 function Triangle:poke_0(_addr, data)
@@ -816,6 +822,10 @@ function Triangle:clock_linear_counter()
     self.linear_counter = self.linear_counter_load
   end
   self.is_active = self:active()
+  if sound then
+    if self.is_active then sound.setVolume(self.channel, (self.envelope and self.envelope.volume or 0xf) / 160)
+    else sound.setVolume(self.channel, 0) end
+  end
 end
 
 function Triangle:clock_length_counter()
@@ -850,7 +860,6 @@ function Triangle:sample()
   return self.amp
 end
 Noise = UTILS.class(Oscillator)
-local Noise = Noise
 Noise.LUT = {4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068}
 Noise.NEXT_BITS_1, Noise.NEXT_BITS_6 =
   unpack(
@@ -869,8 +878,8 @@ Noise.NEXT_BITS_1, Noise.NEXT_BITS_6 =
   )
 )
 
-function Noise:initialize(_apu)
-  self._parent.initialize(self, _apu)
+function Noise:initialize(_apu, channel)
+  self._parent.initialize(self, _apu, channel)
   self.envelope = Envelope:new()
   self.length_counter = LengthCounter:new()
   self.bits = 0x4000
@@ -922,7 +931,6 @@ function Noise:sample()
 end
 
 DMC = UTILS.class()
-local DMC = DMC
 DMC.LUT =
   UTILS.map(
   {428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54},
@@ -931,10 +939,11 @@ DMC.LUT =
   end
 )
 
-function DMC:initialize(cpu, apu)
+function DMC:initialize(cpu, apu, channel)
   self.apu = apu
   self.cpu = cpu
   self.freq = DMC.LUT[1]
+  self.channel = channel
 end
 
 function DMC:reset()
@@ -1055,3 +1064,5 @@ end
 function DMC:status()
   return self.dma_length_counter > 0
 end
+
+return APU

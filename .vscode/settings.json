@@ -1,0 +1,7 @@
+{
+    "Lua.runtime.version": "LuaJIT",
+    "Lua.diagnostics.severity": {
+        "undefined-global": "Warning",
+        "global-in-nil-env": "Warning"
+    }
+}
