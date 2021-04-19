@@ -25,6 +25,7 @@ local width = 256
 local height = 240
 local pixSize = 1
 local lastSource
+local joy
 --local sound = false
 local DEBUG = false
 local function _load(arg)
@@ -70,6 +71,16 @@ local keyButtons = {
     ["g"] = Pad.SELECT,
     ["enter"] = Pad.START
 }
+local joyButtons = {
+    --["w"] = Pad.UP,
+    --["a"] = Pad.LEFT,
+    --["s"] = Pad.DOWN,
+    --["d"] = Pad.RIGHT,
+    [1] = Pad.A,
+    [2] = Pad.B,
+    [8] = Pad.SELECT,
+    [9] = Pad.START
+}
 local function keypressed(key)
     for k, v in pairs(keyButtons) do
         if k == key then
@@ -84,6 +95,60 @@ local function keyreleased(key)
             keyEvents[#keyEvents + 1] = {"keyup", v}
         end
     end
+end
+
+local lastJoyState = {0, 0}
+local function joypressed(button)
+    for k, v in pairs(joyButtons) do
+        if k == button then
+            keyEvents[#keyEvents + 1] = {"keydown", v}
+        end
+    end
+end
+
+local function joyreleased(button)
+    for k, v in pairs(joyButtons) do
+        if k == button then
+            keyEvents[#keyEvents + 1] = {"keyup", v}
+        end
+    end
+end
+
+local function jstate(n)
+    if n > 0.1 then return 1
+    elseif n < -0.1 then return -1
+    else return 0 end
+end
+
+local function joyaxis(x, y)
+    x, y = jstate(x), jstate(y)
+    if lastJoyState[1] ~= x then
+        if lastJoyState[1] == 0 then
+            if x == -1 then keyEvents[#keyEvents + 1] = {"keydown", Pad.UP}
+            else keyEvents[#keyEvents + 1] = {"keydown", Pad.DOWN} end
+        else
+            if lastJoyState[1] == -1 then keyEvents[#keyEvents + 1] = {"keyup", Pad.UP}
+            else keyEvents[#keyEvents + 1] = {"keyup", Pad.DOWN} end
+            if x ~= 0 then
+                if x == -1 then keyEvents[#keyEvents + 1] = {"keydown", Pad.UP}
+                else keyEvents[#keyEvents + 1] = {"keydown", Pad.DOWN} end
+            end
+        end
+    end
+    if lastJoyState[2] ~= y then
+        if lastJoyState[2] == 0 then
+            if y == -1 then keyEvents[#keyEvents + 1] = {"keydown", Pad.LEFT}
+            else keyEvents[#keyEvents + 1] = {"keydown", Pad.RIGHT} end
+        else
+            if lastJoyState[2] == -1 then keyEvents[#keyEvents + 1] = {"keyup", Pad.LEFT}
+            else keyEvents[#keyEvents + 1] = {"keyup", Pad.RIGHT} end
+            if y ~= 0 then
+                if y == -1 then keyEvents[#keyEvents + 1] = {"keydown", Pad.LEFT}
+                else keyEvents[#keyEvents + 1] = {"keydown", Pad.RIGHT} end
+            end
+        end
+    end
+    lastJoyState = {x, y}
 end
 
 local time = 0
@@ -356,13 +421,14 @@ end
 term.setGraphicsMode(2)
 term.clear()
 if sound then
-    for i = 1, 5 do sound.setVolume(i, 0) end
+    for i = 1, 5 do sound.setVolume(i, 0) sound.setPan(i, 0) end
     sound.setWaveType(1, "square")
     sound.setWaveType(2, "square")
     sound.setWaveType(3, "triangle")
     sound.setWaveType(4, "noise")
     sound.setFrequency(4, 1)
 end
+if joystick and joystick.count() > 0 then joy = joystick.open(0) end
 
 _load({...})
 os.queueEvent("update")
@@ -372,6 +438,11 @@ local ok, err = pcall(parallel.waitForAny, function()
         if ev[1] == "char" and ev[2] == "q" then break
         elseif ev[1] == "key" and not ev[3] then keypressed(keys.getName(ev[2]))
         elseif ev[1] == "key_up" then keyreleased(keys.getName(ev[2]))
+        elseif ev[1] == "joystick_press" and ev[2] == 0 then joypressed(ev[3])
+        elseif ev[1] == "joystick_up" and ev[2] == 0 then joyreleased(ev[3])
+        elseif ev[1] == "joystick_axis" and ev[2] == 0 then
+            if ev[3] == 0 then joyaxis(lastJoyState[1], ev[4])
+            elseif ev[3] == 1 then joyaxis(ev[4], lastJoyState[2]) end
         end
     end
 end, function()
@@ -390,6 +461,7 @@ if not ok then printError(err) end
 term.setGraphicsMode(0)
 for i = 0, 15 do term.setPaletteColor(2^i, term.nativePaletteColor(2^i)) end
 if sound then for i = 1, 5 do sound.setVolume(i, 0) sound.setFrequency(i, 0) end end
+if joy then joy.close() end
 --term.setBackgroundColor(colors.black)
 --term.setTextColor(colors.white)
 --term.clear()
