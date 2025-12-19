@@ -38,7 +38,7 @@ function ROM:initialize(conf, cpu, ppu, basename, bytes, str)
     local prg_count, chr_count, wrk_count
     do
         local header_size = 16
-        prg_count, chr_count, wrk_count = self:parse_header({unpack(bytes, idx + 1, idx + header_size)}, str)
+        prg_count, chr_count, wrk_count = self:parse_header({ unpack(bytes, idx + 1, idx + header_size) }, str)
         idx = header_size
     end
     self.prg_banks = {}
@@ -136,9 +136,9 @@ function ROM:save_battery()
     assert(out:close())
 end
 
-function ROM:new(conf, cpu, ppu, basename, bytes, str)
+function ROM:new(conf, cpu, ppu, basename, bytes, str, custom_metatable)
     local rom = {}
-    setmetatable(rom, ROM._mt)
+    setmetatable(rom, custom_metatable or ROM._mt)
     rom:initialize(conf, cpu, ppu, basename, bytes, str)
     return rom
 end
@@ -205,13 +205,16 @@ function ROM:parse_header(buf, str)
 end
 
 local UxROM = {}
-UxROM._mt = {__index = UxROM}
-setmetatable(UxROM, {__index = ROM})
+UxROM._mt = { __index = UxROM }
+setmetatable(UxROM, { __index = ROM })
 function UxROM:new(...)
-    local rom = ROM:new(unpack(...))
+    local args = { ... }
+    table.insert(args, UxROM._mt)
+    local rom = ROM:new(unpack(args))
     setmetatable(rom, UxROM._mt)
     return rom
 end
+
 function UxROM:reset()
     self.cpu:add_mappings(range(0x8000, 0xffff), UTILS.tGetter(self.prg_ref), bind(self.poke_8000, self))
 end
@@ -222,16 +225,20 @@ function UxROM:poke_8000(_addr, data)
         self.prg_ref[i] = self.prg_banks[j][i - 0x8000]
     end
 end
+
 ROM.MAPPER_DB[0x02] = UxROM
 
 local CNROM = {}
-CNROM._mt = {__index = CNROM}
-setmetatable(CNROM, {__index = ROM})
+CNROM._mt = { __index = CNROM }
+setmetatable(CNROM, { __index = ROM })
 function CNROM:new(...)
-    local rom = ROM:new(unpack(...))
+    local args = { ... }
+    table.insert(args, CNROM._mt)
+    local rom = ROM:new(unpack(args))
     setmetatable(rom, CNROM._mt)
     return rom
 end
+
 function CNROM:reset()
     self.cpu:add_mappings(
         range(0x8000, 0xffff),
@@ -242,13 +249,14 @@ end
 
 function CNROM:poke_8000(_addr, data)
     local j = band(data, 3)
-    self.chr_ref = {unpack(self.chr_banks[j])}
+    self.chr_ref = { unpack(self.chr_banks[j]) }
 end
+
 ROM.MAPPER_DB[0x03] = CNROM
 
 local MMC1 = {}
-MMC1._mt = {__index = MMC1}
-setmetatable(MMC1, {__index = ROM})
+MMC1._mt = { __index = MMC1 }
+setmetatable(MMC1, { __index = ROM })
 function MMC1:new(...)
     local rom = {}
     setmetatable(rom, MMC1._mt)
@@ -256,9 +264,9 @@ function MMC1:new(...)
     return rom
 end
 
-local NMT_MODE = {"first", "second", "vertical", "horizontal"}
-local PRG_MODE = {"conseq", "conseq", "fix_first", "fix_last"}
-local CHR_MODE = {"conseq", "noconseq"}
+local NMT_MODE = { "first", "second", "vertical", "horizontal" }
+local PRG_MODE = { "conseq", "conseq", "fix_first", "fix_last" }
+local CHR_MODE = { "conseq", "noconseq" }
 
 function MMC1:init()
     self.chr_mode = nil
@@ -404,13 +412,16 @@ function MMC1:update_chr(chr_mode, chr_bank_0, chr_bank_1)
         self.chr_ref[i + 0x1000] = self.chr_banks[upper][i]
     end
 end
+
 ROM.MAPPER_DB[0x01] = MMC1
 
 local MMC3 = {}
-MMC3._mt = {__index = MMC3}
-setmetatable(MMC3, {__index = ROM})
+MMC3._mt = { __index = MMC3 }
+setmetatable(MMC3, { __index = ROM })
 function MMC3:new(...)
-    local rom = {}
+    local args = { ... }
+    table.insert(args, MMC3._mt)
+    local rom = ROM:new(unpack(args))
     setmetatable(rom, MMC3._mt)
     rom:initialize(...)
     rom:init()
@@ -421,10 +432,46 @@ function MMC3:init(rev) -- rev = :A or :B or :C
     rev = rev or "B"
     self.persistant = rev ~= "A"
 
-    self.prg_banks = self.prg_banks.flatten.each_slice(0x2000).to_a
+    --self.prg_banks = self.prg_banks.flatten.each_slice(0x2000).to_a
+    local new_banks = { {} }
+    local new_bank = new_banks[1]
+    local new_bank_i = 1
+    local new_bank_j = 1
+    for i = 1, #(self.prg_banks) do
+        local old_bank = self.prg_banks[i]
+        for j = 1, #old_bank do
+            if new_bank_j == 0x2001 then
+                new_bank_j = 1
+                new_bank_i = new_bank_i + 1
+                new_bank = {}
+                new_banks[new_bank_i] = new_bank
+            end
+            new_bank[new_bank_j] = old_bank[j]
+            new_bank_j = new_bank_j + 1
+        end
+    end
+    self.prg_banks = new_banks
     self.prg_bank_swap = false
 
-    self.chr_banks = self.chr_banks.flatten.each_slice(0x0400).to_a
+    --self.chr_banks = self.chr_banks.flatten.each_slice(0x0400).to_a
+    local new_banks = { {} }
+    local new_bank = new_banks[1]
+    local new_bank_i = 1
+    local new_bank_j = 1
+    for i = 1, #(self.chr_banks) do
+        local old_bank = self.chr_banks[i]
+        for j = 1, #old_bank do
+            if new_bank_j == 0x0401 then
+                new_bank_j = 1
+                new_bank_i = new_bank_i + 1
+                new_bank = {}
+                new_banks[new_bank_i] = new_bank
+            end
+            new_bank[new_bank_j] = old_bank[j]
+            new_bank_j = new_bank_j + 1
+        end
+    end
+    self.chr_banks = new_banks
     self.chr_bank_mapping = UTILS.fill({}, nil, 8)
     self.chr_bank_swap = false
 end
@@ -473,11 +520,12 @@ end
 -- 0xe000..0xffff: 3 3
 function MMC3:update_prg(addr, bank)
     bank = bank % (#self.prg_banks)
-    if self.prg_bank_swap and addr[13] == 0 then
+    if self.prg_bank_swap and band(addr[13], 0x2000) == 0 then
         addr = bxor(addr, 0x4000)
     end
-    for i = addr + 1, addr + 0x2000 + 1 do
-        self.prg_ref[i] = self.prg_banks[bank][i - addr]
+    --self.prg_ref[1 + bank] = self.prg_banks[1 + bank]
+    for i = addr + 1, addr + 0x2000 do
+        self.prg_ref[i] = self.prg_banks[1 + bank][i - addr]
     end
 end
 
@@ -487,39 +535,33 @@ function MMC3:update_chr(addr, bank)
     end
     local idx = addr / 0x400
     bank = bank % (#self.chr_banks)
-    if self.chr_bank_mapping[idx] == bank then
+    if self.chr_bank_mapping[idx + 1] == bank then
         return
     end
     if self.chr_bank_swap then
         addr = bxor(addr, 0x1000)
     end
     self.ppu:update(0)
-    for i = 1, 0x400 + 1 do
-        self.chr_ref[i + addr] = self.chr_banks[bank][i]
+    for i = 1, 0x400 do
+        self.chr_ref[i + addr] = self.chr_banks[bank + 1][i]
     end
     self.chr_bank_mapping[idx] = bank
 end
 
 function MMC3:poke_8000(_addr, data)
     self.reg_select = band(data, 7)
-    local prg_bank_swap = data[6] == 1
-    local chr_bank_swap = data[7] == 1
+    local prg_bank_swap = band(data, 0x40) == 0x40
+    local chr_bank_swap = band(data, 0x80) == 0x80
 
     if prg_bank_swap ~= self.prg_bank_swap then
         self.prg_bank_swap = prg_bank_swap
-        for i = 0x8000 + 1, 0x8000 + 0x2000 + 1 do
-            self.prg_ref[i] = self.prg_ref[bank][i - 0x8000 + 0xc000]
-        end
-        for i = 0xc000 + 1, 0xc000 + 0x2000 + 1 do
-            self.chr_ref[i] = self.prg_ref[bank][i - 0xc000 + 0x8000]
-        end
-    --self.prg_ref[0x8000, 0x2000], self.prg_ref[0xc000, 0x2000] = self.prg_ref[0xc000, 0x2000], self.prg_ref[0x8000, 0x2000]
+        UTILS.swapRanges(self.prg_ref, 0x8000, 0xc000)
     end
 
     if chr_bank_swap ~= self.chr_bank_swap then
         self.chr_bank_swap = chr_bank_swap
         if not self.chr_ram then
-            self.ppu.update(0)
+            self.ppu:update(0)
             self.chr_ref = UTILS.rotate(self.chr_ref, 0x1000)
             self.chr_bank_mapping = UTILS.rotate(self.chr_bank_mapping, 4)
         end
@@ -540,12 +582,12 @@ function MMC3:poke_8001(_addr, data)
 end
 
 function MMC3:poke_a000(_addr, data)
-    self.ppu:nametables(data[0] == 1 and "horizontal" or "vertical")
+    self.ppu:nametables(band(data, 0x1) == 0x1 and "horizontal" or "vertical")
 end
 
 function MMC3:poke_a001(_addr, data)
-    self.wrk_readable = data[7] == 1
-    self.wrk_writable = data[6] == 0 and self.wrk_readable
+    self.wrk_readable = band(data, 0x80) == 0x80
+    self.wrk_writable = band(data, 0x40) == 0x0 and self.wrk_readable
 end
 
 function MMC3:poke_c000(_addr, data)
@@ -570,7 +612,7 @@ function MMC3:poke_e001(_addr, _data)
 end
 
 function MMC3:vsync()
-    self.clock = self.clock > self.cpu.next_frame_clock and self.clock - self.cpu.next_frame_clock or 0
+    self.clock = self.clock > self.cpu:next_frame_clock() and self.clock - self.cpu:next_frame_clock() or 0
 end
 
 function MMC3:a12_signaled(cycle)
@@ -594,5 +636,641 @@ function MMC3:a12_signaled(cycle)
 end
 
 ROM.MAPPER_DB[0x04] = MMC3
+
+local MMC5 = {}
+MMC5._mt = { __index = MMC5 }
+setmetatable(MMC5, { __index = ROM })
+function MMC5:new(...)
+    local args = { ... }
+    table.insert(args, MMC5._mt)
+    local rom = ROM:new(unpack(args))
+    setmetatable(rom, MMC5._mt)
+    return rom
+end
+
+function MMC5:init()
+    self.chr_mem = {}                                                                                     -- ??K CHR ROM
+    --self.prg_ram = UTILS.fill({}, 0x00, 0x10000)
+    self.prg_ram = UTILS.map(UTILS.fill({}, 0x00, 8), function() return UTILS.fill({}, 0x00, 0x2000) end) -- 64K PRG RAM
+
+    -- Reorganize 8k chr ROM banks into 1kb banks
+    do
+        local initial_chr_banks = self.chr_banks
+        self.chr_1k_banks = {}
+        local chr_rom_bank_idx = 0
+        local chr_rom_idx = (1024) + 1
+        for i = 1, #initial_chr_banks do
+            local old_chr_bank = initial_chr_banks[i]
+            for j = 1, #old_chr_bank do
+                if chr_rom_idx == ((1024) + 1) then
+                    chr_rom_idx = 1
+                    chr_rom_bank_idx = chr_rom_bank_idx + 1
+                    self.chr_1k_banks[chr_rom_bank_idx] = {}
+                end
+                self.chr_1k_banks[chr_rom_bank_idx][chr_rom_idx - 1] = old_chr_bank[j]
+                chr_rom_idx                                          = chr_rom_idx + 1
+            end
+        end
+    end
+    -- Reorganize 1-indexed 16k prg ROM banks into 0-indexed 8kb banks
+    do
+        local initial_16k_prg_rom_banks = self.prg_banks
+        self.prg_banks = {}
+        local prg_rom_bank_idx = 0
+        local prg_rom_idx = (8 * 1024) + 1
+        for i = 1, #initial_16k_prg_rom_banks do
+            local old_prg_bank = initial_16k_prg_rom_banks[i]
+            for j = 1, #old_prg_bank do
+                if prg_rom_idx == ((8 * 1024) + 1) then
+                    prg_rom_idx = 1
+                    prg_rom_bank_idx = prg_rom_bank_idx + 1
+                    self.prg_banks[prg_rom_bank_idx] = {}
+                end
+                self.prg_banks[prg_rom_bank_idx][prg_rom_idx - 1] = old_prg_bank[j]
+                prg_rom_idx                                       = prg_rom_idx + 1
+            end
+        end
+    end
+
+    self.chr_mode                   = 0x00
+    self.chr_sprite_page_selectors  = { 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F } -- chr page "A"
+    self.chr_bg_page_selectors      = { 0x7F, 0x7F, 0x7F, 0x7F }                         -- chr page "B"
+    self.chr_selector_high_bits     = 0x00                                               -- top 2 bits of the 10 bit selector
+
+    -- "The Koei games never write to this register, apparently relying on the MMC5 defaulting to mode 3 at power on. "
+    -- -nesdev wiki
+    self.prg_mode                   = 0x03
+    self.prg_selectors              = { 0x00, 0x00, 0x00, 0x00, #(self.prg_banks) - 1 }
+    local last_prg_bank             = self.prg_banks[#(self.prg_banks)]
+    self.prg_ref_8k_banks           = { 0x00, last_prg_bank, last_prg_bank, last_prg_bank, last_prg_bank }
+
+    self.ram_protect1               = 0x00
+    self.ram_protect2               = 0x00
+
+    self.internal_ram_extended_mode = 0x00 -- starting value??
+
+    self.ppu_nametable_mappings_reg = 0x00
+    self.ppu_nametable_mappings     = { 0x00, 0x00, 0x00, 0x00 } -- starting value??
+    self.nametable_fill_mode_tile   = 0x00
+    self.nametable_fill_mode_color  = 0x00
+
+    self.multiplicand               = 0xFF
+    self.multiplier                 = 0xFF
+
+    self.scanline_pending_bit       = 0x00
+    self.in_frame_bit               = 0x00
+    self.irq_enable                 = false
+    self.scanline_counter           = 0x00
+
+    local b                         = self.chr_1k_banks[1]
+    self.chr_ref_sp_1k_chr_banks    = { b, b, b, b, b, b, b, b }
+    self.chr_ref_bg_1k_chr_banks    = { b, b, b, b }
+    self.chr_ref_last_1k_chr_banks  = self.chr_ref_sp_1k_chr_banks
+
+    self.chr_ref                    = setmetatable({},
+        { __index = bind(self.chr_read, self), __newindex = bind(self.chr_write, self) })
+end
+
+function MMC5:get_prg_8k_bank(selector)
+    local is_ram = band(selector, 0x80) == 0
+    local ram_mask = band(selector, 0x07)
+    local rom_mask = band(selector, 0x7F)
+    return is_ram and self.prg_ram[(ram_mask % #(self.prg_ram)) + 1] or
+        self.prg_banks[(rom_mask % #(self.prg_banks)) + 1]
+end
+
+function MMC5:update_prg()
+    self.prg_ref_8k_banks[1] = self:get_prg_8k_bank(band(self.prg_selectors[1], 0x7))
+
+    local mode = band(self.prg_mode, 0x3)
+    if mode == 0x00 then
+        local masked = bor(band(self.prg_selectors[5], 0x7C), 0x80)
+        self.prg_ref_8k_banks[2] = self:get_prg_8k_bank(masked)
+        self.prg_ref_8k_banks[3] = self:get_prg_8k_bank(masked + 1)
+        self.prg_ref_8k_banks[4] = self:get_prg_8k_bank(masked + 2)
+        self.prg_ref_8k_banks[5] = self:get_prg_8k_bank(masked + 3)
+    elseif mode == 0x01 then
+        local masked = band(self.prg_selectors[3], 0xFE)
+        self.prg_ref_8k_banks[2] = self:get_prg_8k_bank(masked)
+        self.prg_ref_8k_banks[3] = self:get_prg_8k_bank(masked + 1)
+        local masked2 = bor(band(self.prg_selectors[5], 0x7E), 0x80)
+        self.prg_ref_8k_banks[4] = self:get_prg_8k_bank(masked2)
+        self.prg_ref_8k_banks[5] = self:get_prg_8k_bank(masked2 + 1)
+    elseif mode == 0x02 then
+        local masked = band(self.prg_selectors[3], 0xFE)
+        self.prg_ref_8k_banks[2] = self:get_prg_8k_bank(masked)
+        self.prg_ref_8k_banks[3] = self:get_prg_8k_bank(masked + 1)
+        self.prg_ref_8k_banks[4] = self:get_prg_8k_bank(self.prg_selectors[4])
+        self.prg_ref_8k_banks[5] = self:get_prg_8k_bank(bor(self.prg_selectors[5], 0x80))
+    elseif mode == 0x03 then
+        self.prg_ref_8k_banks[2] = self:get_prg_8k_bank(self.prg_selectors[2])
+        self.prg_ref_8k_banks[3] = self:get_prg_8k_bank(self.prg_selectors[3])
+        self.prg_ref_8k_banks[4] = self:get_prg_8k_bank(self.prg_selectors[4])
+        self.prg_ref_8k_banks[5] = self:get_prg_8k_bank(bor(self.prg_selectors[5], 0x80))
+    else
+        assert(false)
+    end
+end
+
+function MMC5:add_register(addr, field, on_set)
+    local setter = on_set and function(_i, v)
+        self[field] = v
+        on_set(v)
+    end or function(_i, v) self[field] = v end
+    self.cpu:add_mappings(addr, function() return self[field] end, setter)
+end
+
+function MMC5:reset()
+    self:add_register(0x5101, 'chr_mode', bind(self.update_chr_1k_banks, self))
+
+    do
+        local chr_sp_pg_idxs = self.chr_sprite_page_selectors
+        local chr_bg_pg_idxs = self.chr_bg_page_selectors
+        local chr_sp_ref = self.chr_ref_sp_1k_chr_banks
+        local chr_bg_ref = self.chr_ref_bg_1k_chr_banks
+
+        self.cpu:add_mappings(range(0x5120, 0x5127), function(i)
+                return chr_sp_pg_idxs[i - 0x511F]
+            end,
+            function(i, v)
+                self.chr_ref_last_1k_chr_banks = chr_sp_ref
+                chr_sp_pg_idxs[i - 0x511F] = v + lshift(band(self.chr_selector_high_bits, 0x3), 8)
+                self:update_chr_1k_banks()
+            end)
+        self.cpu:add_mappings(range(0x5128, 0x512B), function(i, v)
+                return chr_bg_pg_idxs[i - 0x5127]
+            end,
+            function(i, v)
+                self.chr_ref_last_1k_chr_banks = chr_bg_ref
+                chr_bg_pg_idxs[i - 0x5127] = v + lshift(band(self.chr_selector_high_bits, 0x3), 8)
+                self:update_chr_1k_banks()
+            end)
+    end
+    self:add_register(0x5130, 'chr_selector_high_bits')
+
+    self:add_register(0x5100, 'prg_mode', bind(self.update_prg, self))
+    do
+        local prg_selectors = self.prg_selectors
+        self.cpu:add_mappings(range(0x5113, 0x5117), function(i)
+                return prg_selectors[i - 0x5112]
+            end,
+            function(i, v)
+                prg_selectors[i - 0x5112] = v
+                self:update_prg()
+            end)
+    end
+    local map_prg_bank = function(bank_num, offset)
+        self.cpu:add_mappings(range(offset, offset + 0x1FFF), function(i)
+                return self.prg_ref_8k_banks[bank_num][band(i, 0x1FFF)]
+            end,
+            function(i, v)
+                self.prg_ref_8k_banks[bank_num][band(i, 0x1FFF)] = v
+            end)
+    end
+    map_prg_bank(1, 0x6000)
+    map_prg_bank(2, 0x8000)
+    map_prg_bank(3, 0xA000)
+    map_prg_bank(4, 0xC000)
+    map_prg_bank(5, 0xE000)
+
+    self:add_register(0x5102, 'ram_protect1')
+    self:add_register(0x5103, 'ram_protect2')
+
+    do
+        local ppu_nt = self.ppu_nametable_mappings
+        self:add_register(0x5105, 'ppu_nametable_mappings_reg', function(reg)
+            self.ppu_nametable_mappings[1] = band(reg, 0x3)
+            self.ppu_nametable_mappings[2] = band(rshift(reg, 2), 0x3)
+            self.ppu_nametable_mappings[3] = band(rshift(reg, 4), 0x3)
+            self.ppu_nametable_mappings[4] = band(rshift(reg, 6), 0x3)
+            -- TODO: Unimplemented nametable mappings 2 and 3 (Extended RAM and fill-mode)
+            --assert(self.ppu_nametable_mappings[1] <= 0x1)
+            --assert(self.ppu_nametable_mappings[2] <= 0x1)
+            --assert(self.ppu_nametable_mappings[3] <= 0x1)
+            --assert(self.ppu_nametable_mappings[4] <= 0x1)
+            -- HACK: ignore NT 3 and 4
+            self.ppu_nametable_mappings[1] = band(reg, 0x1)
+            self.ppu_nametable_mappings[2] = band(rshift(reg, 2), 0x1)
+            self.ppu_nametable_mappings[3] = band(rshift(reg, 4), 0x1)
+            self.ppu_nametable_mappings[4] = band(rshift(reg, 6), 0x1)
+            self.ppu:nametables(self.ppu_nametable_mappings)
+        end)
+    end
+
+    self:add_register(0x5106, 'nametable_fill_mode_tile')
+    self:add_register(0x5107, 'nametable_fill_mode_color')
+
+    self.cpu:add_mappings(0x5205, function(i, v)
+            return band(self.multiplicand * self.multiplier, 0xFF)
+        end,
+        function(i, v)
+            self.multiplicand = v
+        end)
+    self.cpu:add_mappings(0x5206, function(i, v)
+            return band(rshift(self.multiplicand * self.multiplier, 8), 0xFF)
+        end,
+        function(i, v)
+            self.multiplier = v
+        end)
+
+    self.cpu.ppu_sync = true
+    local scanline_counter_callback = bind(self.scanline_counter_callback, self)
+    self:add_register(0x5203, 'scanline_counter',
+        function(v)
+            self.ppu:scanline_counter_listener(v, scanline_counter_callback)
+        end)
+    -- TODO: Better In Frame bit
+    self.cpu:add_mappings(0x5204, function(i, v)
+            local ret = bor(self.in_frame_bit, self.scanline_pending_bit)
+            self.scanline_pending_bit = 0x00
+            self.cpu:clear_irq(CPU.IRQ_EXT)
+            return ret
+        end,
+        function(i, v)
+            self.irq_enable = band(v, 0x80) ~= 0x00
+        end)
+
+    -- TODO: ExAttribute mode
+    self.ppu.chr_peek = function(idx)
+        local addr_1kpage_idx = rshift(idx, 10) -- / 0x400
+        return self.chr_ref_last_1k_chr_banks[addr_1kpage_idx + 1][band(idx, 0x3FF)]
+    end
+    self.ppu.chr_poke = function(idx, val)
+        local addr_1kpage_idx = rshift(idx, 10) -- / 0x400
+        self.chr_ref_last_1k_chr_banks[addr_1kpage_idx + 1][band(idx, 0x3FF)] = val
+    end
+    self.ppu.chr_bg_read = function(idx)
+        local addr_1kpage_idx = band(rshift(idx, 10), 0x3) -- / 0x400
+        return self.chr_ref_bg_1k_chr_banks[addr_1kpage_idx + 1][band(idx, 0x3FF)]
+    end
+    self.ppu.chr_sprite_read = function(idx)
+        local addr_1kpage_idx = rshift(idx, 10) -- / 0x400
+        return self.chr_ref_sp_1k_chr_banks[addr_1kpage_idx + 1][band(idx, 0x3FF)]
+    end
+    self.ppu.on_scanline_0 = function()
+        self.in_frame_bit = 0x00
+    end
+    self.ppu.on_scanline_240 = function()
+        self.in_frame_bit = 0x40
+    end
+end
+
+function MMC5:update_chr_1k_banks()
+    local sp_selectrs = self.chr_sprite_page_selectors
+    local bg_selectrs = self.chr_bg_page_selectors
+    local bg_ref = self.chr_ref_bg_1k_chr_banks
+    local sp_ref = self.chr_ref_sp_1k_chr_banks
+    local n_chr_banks = #(self.chr_1k_banks)
+
+    if self.chr_mode == 0x03 then
+        sp_ref[1] = self.chr_1k_banks[(sp_selectrs[1] % n_chr_banks) + 1]
+        sp_ref[2] = self.chr_1k_banks[(sp_selectrs[2] % n_chr_banks) + 1]
+        sp_ref[3] = self.chr_1k_banks[(sp_selectrs[3] % n_chr_banks) + 1]
+        sp_ref[4] = self.chr_1k_banks[(sp_selectrs[4] % n_chr_banks) + 1]
+        sp_ref[5] = self.chr_1k_banks[(sp_selectrs[5] % n_chr_banks) + 1]
+        sp_ref[6] = self.chr_1k_banks[(sp_selectrs[6] % n_chr_banks) + 1]
+        sp_ref[7] = self.chr_1k_banks[(sp_selectrs[7] % n_chr_banks) + 1]
+        sp_ref[8] = self.chr_1k_banks[(sp_selectrs[8] % n_chr_banks) + 1]
+
+        bg_ref[1] = self.chr_1k_banks[(bg_selectrs[1] % n_chr_banks) + 1]
+        bg_ref[2] = self.chr_1k_banks[(bg_selectrs[2] % n_chr_banks) + 1]
+        bg_ref[3] = self.chr_1k_banks[(bg_selectrs[3] % n_chr_banks) + 1]
+        bg_ref[4] = self.chr_1k_banks[(bg_selectrs[4] % n_chr_banks) + 1]
+    elseif self.chr_mode == 0x02 then
+        local bank_idx_sp = bg_selectrs[2] * 2
+        sp_ref[1] = self.chr_1k_banks[((bank_idx_sp) % n_chr_banks) + 1]
+        sp_ref[2] = self.chr_1k_banks[((bank_idx_sp + 1) % n_chr_banks) + 1]
+        local bank_idx_sp2 = bg_selectrs[4] * 2
+        sp_ref[3] = self.chr_1k_banks[((bank_idx_sp2) % n_chr_banks) + 1]
+        sp_ref[4] = self.chr_1k_banks[((bank_idx_sp2 + 1) % n_chr_banks) + 1]
+        local bank_idx_sp3 = bg_selectrs[6] * 2
+        sp_ref[5] = self.chr_1k_banks[((bank_idx_sp3) % n_chr_banks) + 1]
+        sp_ref[6] = self.chr_1k_banks[((bank_idx_sp3 + 1) % n_chr_banks) + 1]
+        local bank_idx_sp4 = bg_selectrs[8] * 2
+        sp_ref[7] = self.chr_1k_banks[((bank_idx_sp4) % n_chr_banks) + 1]
+        sp_ref[8] = self.chr_1k_banks[((bank_idx_sp4 + 1) % n_chr_banks) + 1]
+
+        local bank_idx_sp = bg_selectrs[2] * 2
+        bg_ref[1] = self.chr_1k_banks[((bank_idx_sp) % n_chr_banks) + 1]
+        bg_ref[2] = self.chr_1k_banks[((bank_idx_sp + 1) % n_chr_banks) + 1]
+        local bank_idx_sp2 = bg_selectrs[4] * 2
+        bg_ref[3] = self.chr_1k_banks[((bank_idx_sp2) % n_chr_banks) + 1]
+        bg_ref[4] = self.chr_1k_banks[((bank_idx_sp2 + 1) % n_chr_banks) + 1]
+    elseif self.chr_mode == 0x01 then
+        local bank_idx = sp_selectrs[4] * 4
+        sp_ref[1] = self.chr_1k_banks[((bank_idx) % n_chr_banks) + 1]
+        sp_ref[2] = self.chr_1k_banks[((bank_idx + 1) % n_chr_banks) + 1]
+        sp_ref[3] = self.chr_1k_banks[((bank_idx + 2) % n_chr_banks) + 1]
+        sp_ref[4] = self.chr_1k_banks[((bank_idx + 3) % n_chr_banks) + 1]
+        local bank_idx2 = sp_selectrs[8] * 4
+        sp_ref[5] = self.chr_1k_banks[((bank_idx2) % n_chr_banks) + 1]
+        sp_ref[6] = self.chr_1k_banks[((bank_idx2 + 1) % n_chr_banks) + 1]
+        sp_ref[7] = self.chr_1k_banks[((bank_idx2 + 2) % n_chr_banks) + 1]
+        sp_ref[8] = self.chr_1k_banks[((bank_idx2 + 3) % n_chr_banks) + 1]
+
+        local bank_idx_sp = bg_selectrs[4] * 4
+        bg_ref[1] = self.chr_1k_banks[((bank_idx_sp) % n_chr_banks) + 1]
+        bg_ref[2] = self.chr_1k_banks[((bank_idx_sp + 1) % n_chr_banks) + 1]
+        bg_ref[3] = self.chr_1k_banks[((bank_idx_sp + 2) % n_chr_banks) + 1]
+        bg_ref[4] = self.chr_1k_banks[((bank_idx_sp + 3) % n_chr_banks) + 1]
+    elseif self.chr_mode == 0x00 then
+        local bank_idx = sp_selectrs[8] * 8
+        sp_ref[1] = self.chr_1k_banks[((bank_idx) % n_chr_banks) + 1]
+        sp_ref[2] = self.chr_1k_banks[((bank_idx + 1) % n_chr_banks) + 1]
+        sp_ref[3] = self.chr_1k_banks[((bank_idx + 2) % n_chr_banks) + 1]
+        sp_ref[4] = self.chr_1k_banks[((bank_idx + 3) % n_chr_banks) + 1]
+        sp_ref[5] = self.chr_1k_banks[((bank_idx + 4) % n_chr_banks) + 1]
+        sp_ref[6] = self.chr_1k_banks[((bank_idx + 5) % n_chr_banks) + 1]
+        sp_ref[7] = self.chr_1k_banks[((bank_idx + 6) % n_chr_banks) + 1]
+        sp_ref[8] = self.chr_1k_banks[((bank_idx + 7) % n_chr_banks) + 1]
+
+        local bank_idx_sp = bg_selectrs[4] * 8
+        bg_ref[1] = self.chr_1k_banks[((bank_idx_sp) % n_chr_banks) + 1]
+        bg_ref[2] = self.chr_1k_banks[((bank_idx_sp + 1) % n_chr_banks) + 1]
+        bg_ref[3] = self.chr_1k_banks[((bank_idx_sp + 2) % n_chr_banks) + 1]
+        bg_ref[4] = self.chr_1k_banks[((bank_idx_sp + 3) % n_chr_banks) + 1]
+    end
+end
+
+function MMC5:scanline_counter_callback()
+    if self.irq_enable then
+        -- TODO: Clock this better?
+        local clk = self.cpu:current_clock();
+        (self.cpu):do_irq(CPU.IRQ_EXT, clk)
+    end
+end
+
+ROM.MAPPER_DB[0x05] = MMC5
+
+local AxROM = {}
+AxROM._mt = { __index = AxROM }
+setmetatable(AxROM, { __index = ROM })
+function AxROM:new(...)
+    local args = { ... }
+    table.insert(args, AxROM._mt)
+    local rom = ROM:new(unpack(args))
+    setmetatable(rom, AxROM._mt)
+    return rom
+end
+
+function AxROM:reset()
+    self.prg_banks = UTILS.flattenSplit(self.prg_banks, 1024 * 32)
+    self.current_prg_bank = self.prg_banks[1]
+    local write_prg = function(_i, v)
+        self.prg_bank_idx = band(v, 0x7) % #(self.prg_banks)
+        self.current_prg_bank = self.prg_banks[self.prg_bank_idx + 1]
+        self.ppu:nametables(band(v, 0x10) == 0 and "first" or "second")
+    end
+    local read_prg = function(i)
+        return self.current_prg_bank[i - 0x8000 + 1]
+    end
+
+    self.cpu:add_mappings(range(0x8000, 0xffff), read_prg, write_prg)
+end
+
+ROM.MAPPER_DB[0x07] = AxROM
+
+local ColorDreamsROM = {}
+ColorDreamsROM._mt = { __index = ColorDreamsROM }
+setmetatable(ColorDreamsROM, { __index = ROM })
+function ColorDreamsROM:new(...)
+    local args = { ... }
+    table.insert(args, ColorDreamsROM._mt)
+    local rom = ROM:new(unpack(args))
+    setmetatable(rom, ColorDreamsROM._mt)
+    return rom
+end
+
+function ColorDreamsROM:reset()
+    self.chr_banks           = UTILS.flattenSplit(self.chr_banks, 1024 * 8)
+    self.prg_banks           = UTILS.flattenSplit(self.prg_banks, 1024 * 32)
+
+    self.current_prg_bank    = self.prg_banks[1]
+    self.current_chr_bank    = self.chr_banks[1]
+    local write_prg          = function(_i, v)
+        self.prg_bank_idx = band(v, 0x3) % #(self.prg_banks)
+        self.chr_bank_idx = band(rshift(v, 4), 0xF) % #(self.chr_banks)
+        self.current_prg_bank = self.prg_banks[self.prg_bank_idx + 1]
+        self.current_chr_bank = self.chr_banks[self.chr_bank_idx + 1]
+    end
+    local read_prg           = function(i)
+        return self.current_prg_bank[i - 0x8000 + 1]
+    end
+    self.ppu.chr_peek        = function(i)
+        return self.current_chr_bank[i + 1]
+    end
+    self.ppu.chr_poke        = function(_i, _v)
+    end
+    self.ppu.chr_bg_read     = self.ppu.chr_peek
+    self.ppu.chr_sprite_read = self.ppu.chr_peek
+
+    self.cpu:add_mappings(range(0x8000, 0xffff), read_prg, write_prg)
+end
+
+ROM.MAPPER_DB[0x0B] = ColorDreamsROM
+
+local GxROM = {}
+GxROM._mt = { __index = GxROM }
+setmetatable(GxROM, { __index = ROM })
+function GxROM:new(...)
+    local args = { ... }
+    table.insert(args, GxROM._mt)
+    local rom = ROM:new(unpack(args))
+    setmetatable(rom, GxROM._mt)
+    return rom
+end
+
+function GxROM:reset()
+    self.prg_banks           = UTILS.flattenSplit(self.prg_banks, 1024 * 32)
+
+    self.current_prg_bank    = self.prg_banks[1]
+    self.current_chr_bank    = self.chr_banks[1]
+    local write_prg          = function(_i, v)
+        self.chr_bank_idx = band(v, 0x3) % #(self.chr_banks)
+        self.prg_bank_idx = band(rshift(v, 4), 0x3) % #(self.prg_banks)
+        self.current_prg_bank = self.prg_banks[self.prg_bank_idx + 1]
+        self.current_chr_bank = self.chr_banks[self.chr_bank_idx + 1]
+    end
+    local read_prg           = function(i)
+        return self.current_prg_bank[i - 0x8000 + 1]
+    end
+    self.ppu.chr_peek        = function(i)
+        return self.current_chr_bank[i + 1]
+    end
+    self.ppu.chr_poke        = function(i, v)
+        --self.current_chr_bank[i + 1] = v
+    end
+    self.ppu.chr_bg_read     = self.ppu.chr_peek
+    self.ppu.chr_sprite_read = self.ppu.chr_peek
+
+    self.cpu:add_mappings(range(0x8000, 0xffff), read_prg, write_prg)
+end
+
+ROM.MAPPER_DB[0x42] = GxROM
+
+local MMC2 = {}
+MMC2._mt = { __index = MMC2 }
+setmetatable(MMC2, { __index = ROM })
+function MMC2:new(...)
+    local args = { ... }
+    table.insert(args, MMC2._mt)
+    local rom = ROM:new(unpack(args))
+    setmetatable(rom, MMC2._mt)
+    return rom
+end
+
+function MMC2:reset()
+    self.wrk     = nil
+    self.prg_ram = UTILS.fill({}, 0x00, 1024 * 8) -- 8K PRG RAM
+    self.cpu:add_mappings(range(0x6000, 0x7fff), UTILS.tGetter(self.prg_ram, 1 - 0x6000),
+        UTILS.tSetter(self.prg_ram, 1 - 0x6000))
+
+    self.chr_banks            = UTILS.flattenSplit(self.chr_banks, 1024 * 4)
+    self.prg_banks            = UTILS.flattenSplit(self.prg_banks, 1024 * 8)
+
+    self.chr_bank_idxs        = { { 1, 1 }, { 1, 1 } } -- idxs into chr_banks
+    self.current_chr_banks    = { 1, 1 }               -- idxs into chr_bank_idxs[1] and [2]
+    self.ppu.chr_peek         = function(addr)
+        local masked = band(addr, 0xFFF)               -- addr within bank
+        local page = band(rshift(addr, 12), 0x1) + 1   -- address page 1 or 2
+
+        local latch = self.current_chr_banks[page]
+        local bank_idx = self.chr_bank_idxs[page][latch]
+        local bank = self.chr_banks[bank_idx]
+
+        if addr == 0x0FD8 then
+            self.current_chr_banks[1] = 1
+        elseif addr == 0x0FE8 then
+            self.current_chr_banks[1] = 2
+        elseif band(addr, 0x1FF8) == 0x1FD8 then
+            self.current_chr_banks[2] = 1
+        elseif band(addr, 0x1FF8) == 0x1FE8 then
+            self.current_chr_banks[2] = 2
+        end
+
+        return bank[masked + 1]
+    end
+    self.ppu.chr_poke         = function(i, v)
+    end
+    self.ppu.chr_bg_read      = self.ppu.chr_peek
+    self.ppu.chr_sprite_read  = self.ppu.chr_peek
+    local select_chr          = function(reg_num)
+        local idxs_table = reg_num <= 2 and self.chr_bank_idxs[1] or self.chr_bank_idxs[2]
+        local idx_in_idxs_table = reg_num > 2 and reg_num - 2 or reg_num
+        return function(_i, v)
+            idxs_table[idx_in_idxs_table] = band(v, 0x1F) + 1
+        end
+    end
+
+    local read_switchable_prg = function(i)
+        return self.current_prg_bank[i - 0x8000 + 1]
+    end
+    local read_fixed_prg      = function(i)
+        local addr = i - 0xA000
+        local bank = rshift(addr, 13)
+        bank       = #(self.prg_banks) - 2 + bank
+        addr       = band(addr, 0x1FFF)
+        return self.prg_banks[bank][addr + 1]
+    end
+    local write_prg           = function(_i, v)
+        self.prg_bank_idx = band(v, 0xF) % #(self.prg_banks)
+        self.current_prg_bank = self.prg_banks[self.prg_bank_idx + 1]
+    end
+    local mirroring           = function(_i, v)
+        self.ppu:nametables(band(v, 0x01) == 0x01 and "horizontal" or "vertical")
+    end
+    self.cpu:add_mappings(range(0x8000, 0x9FFF), read_switchable_prg, CPU.UNDEFINED)
+    self.cpu:add_mappings(range(0xA000, 0xAFFF), read_fixed_prg, write_prg)
+    self.cpu:add_mappings(range(0xB000, 0xBFFF), read_fixed_prg, select_chr(1))
+    self.cpu:add_mappings(range(0xC000, 0xCFFF), read_fixed_prg, select_chr(2))
+    self.cpu:add_mappings(range(0xD000, 0xDFFF), read_fixed_prg, select_chr(3))
+    self.cpu:add_mappings(range(0xE000, 0xEFFF), read_fixed_prg, select_chr(4))
+    self.cpu:add_mappings(range(0xF000, 0xFFFF), read_fixed_prg, mirroring)
+end
+
+ROM.MAPPER_DB[0x09] = MMC2
+
+local MMC4 = {}
+MMC4._mt = { __index = MMC4 }
+setmetatable(MMC4, { __index = ROM })
+function MMC4:new(...)
+    local args = { ... }
+    table.insert(args, MMC4._mt)
+    local rom = ROM:new(unpack(args))
+    setmetatable(rom, MMC4._mt)
+    return rom
+end
+
+function MMC4:reset()
+    self.wrk     = nil
+    self.prg_ram = UTILS.fill({}, 0x00, 1024 * 8) -- 8K PRG RAM
+    self.cpu:add_mappings(range(0x6000, 0x7fff), UTILS.tGetter(self.prg_ram, 1 - 0x6000),
+        UTILS.tSetter(self.prg_ram, 1 - 0x6000))
+
+    self.chr_banks            = UTILS.flattenSplit(self.chr_banks, 1024 * 4)
+    self.prg_banks            = UTILS.flattenSplit(self.prg_banks, 1024 * 16)
+
+    self.chr_bank_idxs        = { { 1, 2 }, { 1, 1 } } -- idxs into chr_banks
+    self.current_chr_banks    = { 1, 1 }               -- idxs into chr_bank_idxs[1] and [2]
+    self.ppu.chr_peek         = function(addr)
+        local masked = band(addr, 0xFFF)               -- addr within bank
+        local page = band(rshift(addr, 12), 0x1) + 1   -- address page 1 or 2
+
+        local latch = self.current_chr_banks[page]
+        local bank_idx = self.chr_bank_idxs[page][latch]
+        local bank = self.chr_banks[bank_idx]
+
+        if band(addr, 0x1FF8) == 0x0FD8 then
+            self.current_chr_banks[1] = 1
+        elseif band(addr, 0x1FF8) == 0x0FE8 then
+            self.current_chr_banks[1] = 2
+        elseif band(addr, 0x1FF8) == 0x1FD8 then
+            self.current_chr_banks[2] = 1
+        elseif band(addr, 0x1FF8) == 0x1FE8 then
+            self.current_chr_banks[2] = 2
+        end
+
+        return bank[masked + 1]
+    end
+    self.ppu.chr_bg_read      = self.ppu.chr_peek
+    self.ppu.chr_sprite_read  = self.ppu.chr_peek
+    local select_chr          = function(reg_num)
+        local idxs_table = reg_num <= 2 and self.chr_bank_idxs[1] or self.chr_bank_idxs[2]
+        local idx_in_idxs_table
+        if reg_num > 2 then
+            idx_in_idxs_table = reg_num - 2
+        else
+            idx_in_idxs_table = reg_num
+        end
+        return function(_i, v)
+            idxs_table[idx_in_idxs_table] = (band(v, 0x1F) % #(self.chr_banks)) + 1
+        end
+    end
+
+    local read_switchable_prg = function(i)
+        return self.current_prg_bank[i - 0x8000 + 1]
+    end
+    local last_prg_bank       = self.prg_banks[#(self.prg_banks)]
+    local read_fixed_prg      = function(i)
+        local addr = i - 0xC000
+        return last_prg_bank[addr + 1]
+    end
+    local write_prg           = function(_i, v)
+        self.prg_bank_idx = band(v, 0xF) % #(self.prg_banks)
+        self.current_prg_bank = self.prg_banks[self.prg_bank_idx + 1]
+    end
+    local mirroring           = function(_i, v)
+        self.ppu:nametables(band(v, 0x01) == 0x01 and "horizontal" or "vertical")
+    end
+    self.cpu:add_mappings(range(0x8000, 0x9FFF), read_switchable_prg, CPU.UNDEFINED)
+    self.cpu:add_mappings(range(0xA000, 0xAFFF), read_switchable_prg, write_prg)
+    self.cpu:add_mappings(range(0xB000, 0xBFFF), read_switchable_prg, select_chr(1))
+    self.cpu:add_mappings(range(0xC000, 0xCFFF), read_fixed_prg, select_chr(2))
+    self.cpu:add_mappings(range(0xD000, 0xDFFF), read_fixed_prg, select_chr(3))
+    self.cpu:add_mappings(range(0xE000, 0xEFFF), read_fixed_prg, select_chr(4))
+    self.cpu:add_mappings(range(0xF000, 0xFFFF), read_fixed_prg, mirroring)
+end
+
+ROM.MAPPER_DB[0x0A] = MMC4
 
 return ROM

@@ -7,3 +7,7 @@ video.png
 hello.nes
 run100frames.lua
 roms*
+/love
+dump.txt
+/jit
+/.vscode

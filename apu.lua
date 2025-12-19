@@ -31,13 +31,13 @@ end
 -- for documentation on how the APU works
 local band, bor, bxor, bnot, lshift, rshift = bit32.band, bit32.bor, bit32.bxor, bit32.bnot, bit32.lshift, bit32.rshift
 local map, rotatePositiveIdx, nthBitIsSet, nthBitIsSetInt, range, concat0, concat =
-  UTILS.map,
-  UTILS.rotatePositiveIdx,
-  UTILS.nthBitIsSet,
-  UTILS.nthBitIsSetInt,
-  UTILS.range,
-  UTILS.concat0,
-  UTILS.concat
+    UTILS.map,
+    UTILS.rotatePositiveIdx,
+    UTILS.nthBitIsSet,
+    UTILS.nthBitIsSetInt,
+    UTILS.range,
+    UTILS.concat0,
+    UTILS.concat
 
 local APU = {}
 local Noise, DMC, MIXER, Pulse, Triangle
@@ -51,33 +51,34 @@ APU.CHANNEL_OUTPUT_MUL = 256
 APU.CHANNEL_OUTPUT_DECAY = APU.CHANNEL_OUTPUT_MUL / 4 - 1
 
 APU.FRAME_CLOCKS =
-  UTILS.map(
-  {29830, 1, 1, 29828},
-  function(n)
-    return CPU.RP2A03_CC * n
-  end
-)
-APU.OSCILLATOR_CLOCKS =
-  map(
-  {
-    {7458, 7456, 7458, 7458},
-    {7458, 7456, 7458, 7458 + 7452}
-  },
-  function(a)
-    return UTILS.map(
-      a,
+    UTILS.map(
+      { 29830, 1, 1, 29828 },
       function(n)
         return CPU.RP2A03_CC * n
       end
     )
-  end
-)
+APU.OSCILLATOR_CLOCKS =
+    map(
+      {
+        { 7458, 7456, 7458, 7458 },
+        { 7458, 7456, 7458, 7458 + 7452 }
+      },
+      function(a)
+        return UTILS.map(
+          a,
+          function(n)
+            return CPU.RP2A03_CC * n
+          end
+        )
+      end
+    )
 function APU:new(conf, cpu, rate, bits)
   local apu = {}
   setmetatable(apu, APU._mt)
   apu:initialize(conf, cpu, rate, bits)
   return apu
 end
+
 function APU:initialize(conf, cpu, rate, bits)
   self.conf = conf
   self.cpu = cpu
@@ -279,6 +280,7 @@ function APU:clock_dmc(target)
     self.dmc:clock_dma() -- TODO: IS THIS RIGHT?
   until not (self.dmc_clock <= target)
 end
+
 function APU:clock_frame_counter()
   self:clock_oscillators(nthBitIsSetInt(self.frame_divider, 0) == 1)
   self.frame_divider = band((self.frame_divider + 1), 3)
@@ -306,8 +308,9 @@ function APU:flush_sound()
       end
     end
   end
-  self.output = concat({}, self.buffer)
-  self.buffer = {} --.clear
+  self.output = self.buffer --  concat({}, self.buffer)
+  self.buffer = {}          --.clear
+  --table.clear(self.buffer)
 end
 
 function APU:proceed(target)
@@ -519,7 +522,8 @@ function MIXER:sample()
   local dac0 = self.pulse_0:sample() + self.pulse_1:sample()
   local dac0 = 95.88 / ((8128 / dac0) + 100)
   -- TODO: DMC (For some reason it sounds really bad)
-  local dac1 = 159.79 / (159 + 1 / ((self.triangle:sample() / 8227) + (self.noise:sample() / 12241))) --+ (self.dmc:sample() / 22638)))
+  local dac1 = 159.79 /
+      (159 + 1 / ((self.triangle:sample() / 8227) + (self.noise:sample() / 12241))) --+ (self.dmc:sample() / 22638)))
   --]]
   return (dac0 + dac1)
   --[[
@@ -641,15 +645,16 @@ function Oscillator:clock_envelope()
     else sound.setVolume(self.channel, 0) end
   end
 end
+
 Pulse = UTILS.class(Oscillator)
 Pulse.MIN_FREQ = 0x0008
 Pulse.MAX_FREQ = 0x07ff
 --Pulse.WAVE_FORM = map{0b11111101, 0b11111001, 0b11100001, 0b00000110},function(n) return UTILS.map(range(0,7), function(i) return n[i] * 0x1f } end))
 Pulse.WAVE_FORM = {
-  {[0] = 0, 0, 0, 0, 0, 0, 0, 1},
-  {[0] = 0, 0, 0, 0, 0, 0, 1, 1},
-  {[0] = 0, 0, 0, 0, 1, 1, 1, 1},
-  {[0] = 1, 1, 1, 1, 1, 1, 0, 0}
+  { [0] = 0, 0, 0, 0, 0, 0, 0, 1 },
+  { [0] = 0, 0, 0, 0, 0, 0, 1, 1 },
+  { [0] = 0, 0, 0, 0, 1, 1, 1, 1 },
+  { [0] = 1, 1, 1, 1, 1, 1, 0, 0 }
 }
 Pulse.WAVE_FORM_DUTY = {1 / 8, 1 / 4, 1 / 2, 3 / 4}
 
@@ -681,9 +686,9 @@ end
 
 function Pulse:update_freq()
   if
-    self.wave_length >= Pulse.MIN_FREQ and
+      self.wave_length >= Pulse.MIN_FREQ and
       self.wave_length + band(self.sweep_increase, rshift(self.wave_length, self.sweep_shift)) <= Pulse.MAX_FREQ
-   then
+  then
     self.freq = (self.wave_length + 1) * 2 * self.fixed
     self.period_timer = (2048 - (self.freq / 1000)) * 4
     self.valid_freq = true
@@ -746,6 +751,7 @@ function Pulse:clock_sweep(complement)
   self.sweep_reload = false
   self.sweep_count = self.sweep_rate
 end
+
 function Pulse:sample()
   --[[
   if self.is_active then
@@ -885,24 +891,25 @@ function Triangle:sample()
   end
   return self.amp
 end
+
 Noise = UTILS.class(Oscillator)
-Noise.LUT = {4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068}
+Noise.LUT = { 4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068 }
 Noise.NEXT_BITS_1, Noise.NEXT_BITS_6 =
-  unpack(
-  UTILS.map(
-    {1, 6},
-    function(shifter)
-      return UTILS.map(
-        range(0, 0x7fff),
-        function(bits)
-          return math.floor(
-            nthBitIsSetInt(bits, 0) == nthBitIsSetInt(bits, shifter) and (bits / 2) or (bits / 2 + 0x4000)
+    unpack(
+      UTILS.map(
+        { 1, 6 },
+        function(shifter)
+          return UTILS.map(
+            range(0, 0x7fff),
+            function(bits)
+              return math.floor(
+                nthBitIsSetInt(bits, 0) == nthBitIsSetInt(bits, shifter) and (bits / 2) or (bits / 2 + 0x4000)
+              )
+            end
           )
         end
       )
-    end
-  )
-)
+    )
 
 function Noise:initialize(_apu, channel)
   self._parent.initialize(self, _apu, channel)
@@ -943,7 +950,7 @@ function Noise:sample()
       return self.bits % 2 == 0 and self.envelope.output * 2 or 0
     end
 
-    local sum = self.bits % 2 == 0 and self.timer or 0
+    local sum = self.bits % 2 == 0 and (self.timer + self.rate) or 0
     repeat
       self.bits = self.shifter[self.bits]
       if self.bits % 2 == 0 then
@@ -963,12 +970,12 @@ end
 
 DMC = UTILS.class()
 DMC.LUT =
-  UTILS.map(
-  {428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54},
-  function(n)
-    return n * CPU.RP2A03_CC
-  end
-)
+    UTILS.map(
+      { 428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54 },
+      function(n)
+        return n * CPU.RP2A03_CC
+      end
+    )
 
 function DMC:initialize(cpu, apu, channel)
   self.apu = apu

@@ -17,7 +17,7 @@ local NES = {}
 NES._mt = {__index = NES}
 
 function NES:reset()
-    self.audio, self.video, self.input = {spec = {}}, {palette = {}}, {}
+    self.audio, self.video, self.input = { spec = {} }, { palette = {} }, {}
 
     local cpu = self.cpu
     cpu:reset()
@@ -28,20 +28,40 @@ function NES:reset()
     cpu:boot()
     self.rom:load_battery()
 end
+
 function NES:run_once()
+    --prof.push("NES:run_once")
+    --prof.push("ppu:setup_frame")
     self.cpu.ppu:setup_frame()
+    --prof.pop("ppu:setup_frame")
+
+    --prof.push("cpu:run")
     self.cpu:run()
+    --prof.pop("cpu:run")
+
+    --prof.push("vsync")
+    --prof.push("ppu:vsync")
     self.cpu.ppu:vsync()
+    --prof.pop("ppu:vsync")
     --print "ppu vsync"
     --print(self.cpu.clk)
+    --prof.push("apu:vsync")
     self.cpu.apu:vsync()
+    --prof.pop("apu:vsync")
     --print "apu vsync"
     --print(self.cpu.clk)
+    --prof.push("cpu:vsync")
     self.cpu:vsync()
+    --prof.pop("cpu:vsync")
     self.rom:vsync()
+    --prof.pop("vsync")
 
     self.frame = self.frame + 1
+    --prof.pop("NES:run_once")
 end
+
+if jit then jit.off(NES.run_once) end
+
 function NES:run(counter)
     self:reset()
     if not counter then
@@ -55,6 +75,7 @@ function NES:run(counter)
         acum = acum + 1
     end
 end
+
 function NES:new(opts)
     opts = opts or {}
     local conf = {romfile = opts.file, pc = opts.pc or nil, loglevel = opts.loglevel or 0, debug = opts.debug}

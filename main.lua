@@ -2,7 +2,7 @@ if pcall(require, "jit.opt") then
     require("jit.opt").start(
         "maxmcode=8192",
         "maxtrace=2000"
-        --
+    --
     )
 end
 package.loaded.apu = nil
@@ -20,7 +20,7 @@ local Pad = require "pads".Pad
 local PPU = require "ppu"
 local APU = require "apu"
 
-local Nes = nil
+local Nes = NES
 local width = 256
 local height = 240
 local pixSize = 1
@@ -60,7 +60,10 @@ local function _load(arg)
     --sound = love.sound.newSoundData(samplerate / 60 + 1, samplerate, bits, channels)
     --QS = love.audio.newQueueableSource(samplerate, bits, channels)
 end
+
 local keyEvents = {}
+local keyDownEventObjCache = {}
+local keyUpEventObjCache = {}
 local keyButtons = {
     ["w"] = Pad.UP,
     ["a"] = Pad.LEFT,
@@ -84,7 +87,10 @@ local joyButtons = {
 local function keypressed(key)
     for k, v in pairs(keyButtons) do
         if k == key then
-            keyEvents[#keyEvents + 1] = {"keydown", v}
+            if keyDownEventObjCache[v] == nil then
+                keyDownEventObjCache[v] = { "keydown", v }
+            end
+            keyEvents[#keyEvents + 1] = keyDownEventObjCache[v]
         end
     end
 end
@@ -92,7 +98,10 @@ end
 local function keyreleased(key)
     for k, v in pairs(keyButtons) do
         if k == key then
-            keyEvents[#keyEvents + 1] = {"keyup", v}
+            if keyUpEventObjCache[v] == nil then
+                keyUpEventObjCache[v] = { "keyup", v }
+            end
+            keyEvents[#keyEvents + 1] = keyUpEventObjCache[v]
         end
     end
 end
@@ -153,7 +162,11 @@ end
 
 local time = 0
 local timeTwo = 0
-local rate = 1 / 59.97
+local update_freq = 59.94
+local rate = 1 / update_freq
+local max_updates_per_frame = update_freq * 1.2
+local fpsHistory = UTILS.fill({}, 120, 120)
+local fpsIdx = 1
 local fps = 0
 local tickRate = 0
 local tickRatetmp = 0
@@ -228,10 +241,13 @@ local function drawAPUState()
         10,
         200
     )
+    --love.graphics.print(string.format("MMC5: %04X", Nes.rom.ppu_nametable_mappings_reg), 10, 220)
+    love.graphics.print(string.format("garbage count(LUA): %d", collectgarbage("count")), 10, 220)
+    --collectgarbage("collect")
 end
 local function draw()
     drawScreen()
-    if DEBUG then
+    if IS_DEBUG then
         drawPalette()
         drawAPUState()
     end
@@ -345,16 +361,26 @@ local function draw()
     --[
     time = time + ((os.epoch "utc" - last_render_) / 1000)
     timeTwo = timeTwo + ((os.epoch "utc" - last_render_) / 1000)
-    while time > rate do
+    local update_count = 0
+    while time > rate and update_count < max_updates_per_frame do
         time = time - rate
         update()
+        update_count = update_count + 1
     end
+    --update()
     if timeTwo > 1 then
         timeTwo = 0
         tickRate = tickRatetmp
         tickRatetmp = 0
     end
     fps = 1 / ((os.epoch "utc" - last_render_) / 1000)
+    fpsHistory[fpsIdx] = fps
+    fpsIdx = (fpsIdx % #fpsHistory) + 1
+    fps = 0
+    for i = 1, #fpsHistory do
+        fps = fps + fpsHistory[i]
+    end
+    fps = fps / #fpsHistory
     --]]
     --[[
     timeTwo = timeTwo + love.timer.getDelta()

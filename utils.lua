@@ -26,24 +26,58 @@ function UTILS.timeF(f, n)
     return os.clock() - t
 end
 
-function UTILS.tSetter(t)
+function UTILS.tSetter(t, offs)
+    offs = (offs or 0)
     return function(i, v)
-        t[i] = v
+        t[i + offs] = v
     end
 end
+
 function UTILS.tGetter(t, offs)
     offs = (offs or 1)
     return function(i)
         return t[i + offs]
     end
 end
+
+-- turns a table of tables, where the inner tables are all of a fixed size N
+-- into a new table of tables, where the inner tables are all of size new_size
+function UTILS.flattenSplit(tt, new_size)
+    local tt_first_idx = tt[0] and 0 or 1
+
+    local new_tt = {}
+    local new_tt_idx = tt_first_idx
+    local new_t_idx = tt[tt_first_idx][0] and 0 or 1
+
+    if new_t_idx == 0 then
+        new_size = new_size - 1
+    end
+
+    for tt_idx = tt_first_idx, #tt do
+        local t = tt[tt_idx]
+        for t_idx = t[0] and 0 or 1, #t do
+            if new_t_idx == new_size + 1 then
+                new_t_idx = tt[tt_first_idx][0] and 0 or 1
+                new_tt_idx = new_tt_idx + 1
+                new_tt[new_tt_idx] = {}
+            elseif new_tt[new_tt_idx] == nil then
+                new_tt[new_tt_idx] = {}
+            end
+            new_tt[new_tt_idx][new_t_idx] = t[t_idx]
+            new_t_idx = new_t_idx + 1
+        end
+    end
+    return new_tt
+end
+
 function UTILS.map(t, f)
     local tt = {}
     for i = t[0] and 0 or 1, #t do
-        tt[i] = f(t[i])
+        tt[i] = f(t[i], tt)
     end
     return tt
 end
+
 function UTILS.fill(t, v, n, step, offs)
     for i = t[0] and 0 or 1, math.max(#t, n or 0), step or 1 do
         t[i + (offs or 0)] = v
@@ -98,7 +132,7 @@ end
 
 -- In-place
 function UTILS.rotate(array, shift) -- Works for array with consecutive entries
-    shift = shift or 1 -- make second arg optional, defaults to 1
+    shift = shift or 1              -- make second arg optional, defaults to 1
 
     local start = array[0] and 0 or 1
     local size = #array
@@ -114,6 +148,7 @@ function UTILS.rotate(array, shift) -- Works for array with consecutive entries
     end
     return array
 end
+
 function UTILS.rotateNew(t, r)
     local rotated = {}
     local size = #t
@@ -141,12 +176,15 @@ function UTILS.rotateNew(t, r)
     end
     return rotated
 end
+
 function UTILS.nthBitIsSet(n, nth)
     return band(n, nth == 0 and 0x1 or lshift(0x1, nth)) ~= 0
 end
+
 function UTILS.nthBitIsSetInt(n, nth)
     return UTILS.nthBitIsSet(n, nth) and 1 or 0
 end
+
 function UTILS.transpose(t)
     local tt = {}
     if #t == 0 then
@@ -162,6 +200,7 @@ function UTILS.transpose(t)
     end
     return tt
 end
+
 function UTILS.range(a, b, step)
     local t = {}
     -- is floor right here?
@@ -179,11 +218,13 @@ function UTILS.range(a, b, step)
     end
     return t
 end
+
 function UTILS.printf(...)
     print(string.format(...))
 end
+
 function UTILS.concat0(...)
-    local args = {...}
+    local args = { ... }
     if type(args[1]) == "table" then
         local ct = {}
         for j = 1, #args do
@@ -197,8 +238,9 @@ function UTILS.concat0(...)
         return table.concat(...)
     end
 end
+
 function UTILS.concat(...)
-    local args = {...}
+    local args = { ... }
     if type(args[1]) == "table" then
         local ct = {}
         for j = 1, #args do
@@ -212,6 +254,7 @@ function UTILS.concat(...)
         return table.concat(...)
     end
 end
+
 function UTILS.copy(t, n, offset, step)
     local tt = {}
     n = n or #t
@@ -221,6 +264,7 @@ function UTILS.copy(t, n, offset, step)
     end
     return tt
 end
+
 function UTILS.dump(o)
     if type(o) == "table" then
         local s = "{ "
@@ -235,6 +279,7 @@ function UTILS.dump(o)
         return tostring(o)
     end
 end
+
 function UTILS.dumpi(o)
     if type(o) == "table" then
         local s = "{ "
@@ -249,6 +294,7 @@ function UTILS.dumpi(o)
         return tostring(o)
     end
 end
+
 function UTILS.all(t, f)
     for i = t[0] and 0 or 1, #t do
         if not f(t[i]) then
@@ -257,6 +303,7 @@ function UTILS.all(t, f)
     end
     return true
 end
+
 function UTILS.flat_map(t, f)
     t = UTILS.map(t, f)
     local tt = {}
@@ -269,11 +316,13 @@ function UTILS.flat_map(t, f)
     end
     return tt
 end
+
 function UTILS.clear(t)
     for k in pairs(t) do
         t[k] = nil
     end
 end
+
 function UTILS.uniq(t)
     local tt = {}
     local done = {}
@@ -286,6 +335,7 @@ function UTILS.uniq(t)
     end
     return tt
 end
+
 local p = print
 local f = nil
 function UTILS.print(x)
@@ -301,6 +351,7 @@ function UTILS.print(x)
     --f:flush()
     --p(str)
 end
+
 function UTILS.import(t)
     local e = getfenv(2)
     for k, v in pairs(t) do
@@ -311,10 +362,10 @@ end
 function UTILS.class(parent)
     local class = {}
     if parent then
-        setmetatable(class, {__index = parent})
+        setmetatable(class, { __index = parent })
         class._parent = parent
     end
-    class._mt = {__index = class}
+    class._mt = { __index = class }
     function class:new(...)
         local instance = {}
         setmetatable(instance, class._mt)
@@ -323,7 +374,16 @@ function UTILS.class(parent)
         end
         return instance
     end
+
     return class
+end
+
+function UTILS.swapRanges(arrTable, start1, start2, size)
+    for i = 1, size do
+        local tmp = arrTable[i + start1]
+        arrTable[i + start1] = arrTable[i + start2]
+        arrTable[i + start2] = tmp
+    end
 end
 
 return UTILS
