@@ -410,8 +410,10 @@ local MMC3 = {}
 MMC3._mt = {__index = MMC3}
 setmetatable(MMC3, {__index = ROM})
 function MMC3:new(...)
-    local rom = ROM:new(unpack(...))
+    local rom = {}
     setmetatable(rom, MMC3._mt)
+    rom:initialize(...)
+    rom:init()
     return rom
 end
 

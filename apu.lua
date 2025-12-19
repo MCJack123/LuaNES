@@ -1,6 +1,32 @@
 local UTILS = require "utils"
 local CPU = require "cpu"
 
+local sound
+if _G.sound then
+  local s = _G.sound
+  local state = {}
+  for i = 1, 5 do state[i] = {freq = 0, vol = 0, type = "none", param = nil} end
+  sound = {
+    version = 2,
+    setWaveType = function(channel, type, param)
+      if state[channel].type == type and state[channel].param == param then return end
+      s.setWaveType(channel, type, param)
+      state[channel].type = type
+      state[channel].param = param
+    end,
+    setVolume = function(channel, vol)
+      if state[channel].vol == vol then return end
+      s.setVolume(channel, vol * 5)
+      state[channel].vol = vol
+    end,
+    setFrequency = function(channel, freq)
+      if state[channel].freq == freq then return end
+      s.setFrequency(channel, freq)
+      state[channel].freq = freq
+    end
+  }
+end
+
 -- Refer to https://wiki.nesdev.com/w/index.php/APU
 -- for documentation on how the APU works
 local band, bor, bxor, bnot, lshift, rshift = bit32.band, bit32.bor, bit32.bxor, bit32.bnot, bit32.lshift, bit32.rshift
@@ -907,6 +933,11 @@ end
 function Noise:sample()
   self.bits = self.bits or 0x4000
   self.timer = self.timer - self.rate
+  if sound then
+    sound.setFrequency(self.channel, self.freq)
+    if self.is_active then sound.setVolume(self.channel, (self.envelope and self.envelope.volume or 0xf) / 160)
+    else sound.setVolume(self.channel, 0) end
+  end
   if self.is_active then
     if self.timer >= 0 then
       return self.bits % 2 == 0 and self.envelope.output * 2 or 0
